@@ -9,6 +9,7 @@ class ApplicationController < ActionController::API
   rescue_from ApplicationError, with: :render_application_error
   rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
+  rescue_from ActiveRecord::InvalidForeignKey, with: :render_invalid_reference
   rescue_from ActionController::ParameterMissing, with: :render_bad_request
   rescue_from Pundit::NotAuthorizedError, with: :render_forbidden
 
@@ -48,6 +49,13 @@ class ApplicationController < ActionController::API
 
   def render_bad_request(error)
     render json: error_body("bad_request", error.message), status: :bad_request
+  end
+
+  # A client-supplied id that doesn't reference a real row (e.g. a bogus
+  # organization_id) hits the database's own foreign key constraint. Surface
+  # it as a normal validation error instead of a raw 500.
+  def render_invalid_reference(_error)
+    render json: error_body("invalid_reference", "References a record that doesn't exist"), status: :unprocessable_content
   end
 
   def render_forbidden(_error)

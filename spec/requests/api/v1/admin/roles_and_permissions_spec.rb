@@ -36,12 +36,13 @@ RSpec.describe "Admin roles, permissions and role assignments", type: :request d
       expect(Role.find_by(code: "support_agent")).to be_present
     end
 
-    it "rejects an organization/branch mismatch with the role's scope" do
+    it "rejects a role that names a non-existent organization" do
       post "/api/v1/admin/roles",
-           params: { name: "Bad Role", code: "bad_role", scope_type: "platform", organization_id: SecureRandom.uuid },
+           params: { name: "Bad Role", code: "bad_role", scope_type: "organization", organization_id: SecureRandom.uuid },
            headers: auth_headers_for(admin, app_type: "admin"), as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body["error"]["code"]).to eq("invalid_reference")
     end
   end
 

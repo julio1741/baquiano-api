@@ -3,9 +3,9 @@ require "rails_helper"
 RSpec.describe AccessControl::HasPermission do
   let(:permission) { create(:permission, resource: "orders", action: "read") }
   let(:user) { create(:user) }
-  let(:org_id) { SecureRandom.uuid }
-  let(:other_org_id) { SecureRandom.uuid }
-  let(:branch_id) { SecureRandom.uuid }
+  let(:organization) { create(:organization) }
+  let(:other_organization) { create(:organization) }
+  let(:branch) { create(:branch, organization: organization) }
 
   def grant(role, organization_id: nil, branch_id: nil)
     create(:role_permission, role: role, permission: permission)
@@ -25,26 +25,34 @@ RSpec.describe AccessControl::HasPermission do
     grant(create(:role, scope_type: :platform))
 
     expect(described_class.call(user: user, code: "orders:read")).to be(true)
-    expect(described_class.call(user: user, code: "orders:read", organization_id: org_id)).to be(true)
-    expect(described_class.call(user: user, code: "orders:read", organization_id: org_id, branch_id: branch_id)).to be(true)
+    expect(described_class.call(user: user, code: "orders:read", organization_id: organization.id)).to be(true)
+    expect(
+      described_class.call(user: user, code: "orders:read", organization_id: organization.id, branch_id: branch.id)
+    ).to be(true)
   end
 
   it "an organization-scoped grant applies within that organization but not elsewhere" do
-    grant(create(:role, :organization_scoped, organization_id: org_id), organization_id: org_id)
+    grant(create(:role, :organization_scoped), organization_id: organization.id)
 
-    expect(described_class.call(user: user, code: "orders:read", organization_id: org_id)).to be(true)
-    expect(described_class.call(user: user, code: "orders:read", organization_id: org_id, branch_id: branch_id)).to be(true)
-    expect(described_class.call(user: user, code: "orders:read", organization_id: other_org_id)).to be(false)
+    expect(described_class.call(user: user, code: "orders:read", organization_id: organization.id)).to be(true)
+    expect(
+      described_class.call(user: user, code: "orders:read", organization_id: organization.id, branch_id: branch.id)
+    ).to be(true)
+    expect(described_class.call(user: user, code: "orders:read", organization_id: other_organization.id)).to be(false)
     expect(described_class.call(user: user, code: "orders:read")).to be(false)
   end
 
   it "a branch-scoped grant applies only to that branch" do
-    other_branch_id = SecureRandom.uuid
-    grant(create(:role, :branch_scoped, organization_id: org_id), organization_id: org_id, branch_id: branch_id)
+    other_branch = create(:branch, organization: organization)
+    grant(create(:role, :branch_scoped), organization_id: organization.id, branch_id: branch.id)
 
-    expect(described_class.call(user: user, code: "orders:read", organization_id: org_id, branch_id: branch_id)).to be(true)
-    expect(described_class.call(user: user, code: "orders:read", organization_id: org_id, branch_id: other_branch_id)).to be(false)
-    expect(described_class.call(user: user, code: "orders:read", organization_id: org_id)).to be(false)
+    expect(
+      described_class.call(user: user, code: "orders:read", organization_id: organization.id, branch_id: branch.id)
+    ).to be(true)
+    expect(
+      described_class.call(user: user, code: "orders:read", organization_id: organization.id, branch_id: other_branch.id)
+    ).to be(false)
+    expect(described_class.call(user: user, code: "orders:read", organization_id: organization.id)).to be(false)
   end
 
   it "ignores a revoked assignment" do

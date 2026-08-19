@@ -30,4 +30,12 @@ class ApplicationPolicy
   def has_permission?(code, organization_id: nil, branch_id: nil)
     AccessControl::HasPermission.call(user: user, code: code, organization_id: organization_id, branch_id: branch_id)
   end
+
+  # Platform admins (organizations:manage) can always manage any branch's
+  # sub-resources; merchant staff need the scoped permission for that
+  # specific branch (or its organization, org-wide).
+  def can_manage_branch?(branch, code:)
+    has_permission?("organizations:manage") ||
+      has_permission?(code, organization_id: branch.organization_id, branch_id: branch.id)
+  end
 end

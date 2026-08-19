@@ -110,5 +110,17 @@ platform/organization/branch, Pundit deny-by-default. Ver
 decisiones marcadas como pendientes de validación (proveedor de SMS, MFA de
 administración).
 
-Los dominios de negocio restantes (Organizations, Catalog, Orders, Payments,
+**Incremento 2** (Organizaciones, comercios, sucursales, catálogo):
+`organizations`/`merchants`/`branches` con horarios y cobertura geográfica
+(PostGIS `ST_Covers`, sin cómputo en Ruby); catálogo completo (categorías,
+productos, variantes, grupos de modificadores, modificadores) con bloqueo
+real de productos `prescription_required` hasta habilitar
+`config.x.prescription_sales_enabled`; disponibilidad simple por
+producto/variante. Barinas + una zona de referencia sembradas de forma
+idempotente. CRUD admin de organizaciones/comercios/sucursales, autoservicio
+de comercio (pausar sucursal, gestionar catálogo, disponibilidad) y
+endpoints públicos de cliente (cobertura, catálogo publicado) sin
+autenticación. 79 tests en total.
+
+Los dominios de negocio restantes (Customers, Carts, Orders, Payments,
 Dispatch, ...) se agregan en los incrementos siguientes.

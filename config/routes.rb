@@ -26,6 +26,9 @@ Rails.application.routes.draw do
         post "session/refresh", to: "sessions#refresh"
         delete "session", to: "sessions#destroy"
         resource :profile, only: %i[show update], controller: "profiles"
+
+        get "coverage", to: "coverage#show"
+        get "branches/:branch_id/catalog", to: "catalogs#show"
       end
 
       namespace :courier do
@@ -40,6 +43,25 @@ Rails.application.routes.draw do
         post "otp/verify", to: "otps#verify"
         post "session/refresh", to: "sessions#refresh"
         delete "session", to: "sessions#destroy"
+
+        resources :branches, only: %i[index show update] do
+          member do
+            post :pause
+            post :resume
+          end
+          resources :catalogs, only: %i[index create]
+          resources :inventory_items, only: %i[index create]
+        end
+
+        resources :catalogs, only: %i[show update] do
+          post :publish, on: :member
+          resources :categories, only: %i[index create]
+          resources :products, only: %i[index create]
+        end
+
+        resources :categories, only: %i[show update destroy]
+        resources :products, only: %i[show update destroy]
+        resources :inventory_items, only: [ :update ]
       end
 
       namespace :admin do
@@ -51,6 +73,15 @@ Rails.application.routes.draw do
         resources :roles, only: %i[index show create update destroy]
         resources :permissions, only: [ :index ]
         resources :role_assignments, only: %i[create destroy]
+
+        resources :organizations, only: %i[index show create update destroy]
+        resources :merchants, only: %i[index show create update destroy]
+        resources :branches, only: %i[index show create update destroy] do
+          member do
+            post :pause
+            post :resume
+          end
+        end
       end
     end
   end

@@ -3,20 +3,16 @@ class Role < ApplicationRecord
   has_many :permissions, through: :role_permissions
   has_many :role_assignments
 
+  # organization_id: which organization defined this custom role (nil for a
+  # global/system role template usable by any organization — e.g.
+  # "merchant_owner", assignable to staff at any merchant).
+  #
+  # scope_type: at what granularity ASSIGNMENTS of this role apply
+  # (platform-wide / one organization / one branch). Independent of
+  # organization_id above — a global role can very much have scope_type
+  # "organization", meaning each assignment of it must specify which
+  # organization it grants access to (see RoleAssignment's own validation).
   enum :scope_type, { platform: "platform", organization: "organization", branch: "branch" }, validate: true
 
   validates :name, :code, presence: true
-
-  validate :organization_id_matches_scope
-
-  private
-
-  def organization_id_matches_scope
-    case scope_type
-    when "platform"
-      errors.add(:organization_id, "must be blank for platform-scoped roles") if organization_id.present?
-    when "organization", "branch"
-      errors.add(:organization_id, "is required for #{scope_type}-scoped roles") if organization_id.blank?
-    end
-  end
 end

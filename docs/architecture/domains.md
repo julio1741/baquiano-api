@@ -32,6 +32,24 @@ Pundit policies also stay flat in `app/policies` (`UserPolicy`, `RolePolicy`,
 for the actual scope-matching logic (e.g. `ApplicationPolicy#has_permission?`
 calls `AccessControl::HasPermission`).
 
+## Gotcha: model names that collide with an API route namespace
+
+`Api::V1::Merchant` exists as a real Ruby module (Zeitwerk creates it because
+`app/controllers/api/v1/merchant/` holds `Api::V1::Merchant::OtpsController`
+etc.) — the routing namespace for the merchant-role API. That collides with
+the top-level `Merchant` model: a bare `Merchant` referenced from *inside*
+any `Api::V1::*` controller resolves to the *namespace module*, not the
+model, because Ruby's lexical constant lookup checks the enclosing
+`Api::V1` scope before falling back to the top level. It fails at runtime,
+not load time (`NoMethodError: undefined method 'find' for module
+Api::V1::Merchant`), so it isn't caught by RuboCop/Brakeman — only by
+actually exercising the code path.
+
+Every `app/controllers/api/v1/**/*.rb` file that touches the `Merchant`
+model must spell it `::Merchant`. The same trap will resurface for
+`Customer` (Increment 3) and `Courier` (Increment 5) once those models and
+their matching route namespaces both exist — qualify those the same way.
+
 Domains are added incrementally, one per implementation increment (section 14
 of the master prompt) — folders are only created once they hold real code, to
 avoid empty scaffolding:

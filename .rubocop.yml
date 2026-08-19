@@ -14,7 +14,12 @@ RSpec/MultipleExpectations:
   Enabled: false
 
 RSpec/ExampleLength:
-  Max: 15
+  Max: 20
+
+# End-to-end lifecycle specs (create → assign role → act as staff → publish)
+# legitimately need more than 5 lets to set up a realistic scenario.
+RSpec/MultipleMemoizedHelpers:
+  Max: 10
 
 # Overwrite or add rules to create your own house style
 #

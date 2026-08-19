@@ -6,12 +6,10 @@ FactoryBot.define do
 
     trait :organization_scoped do
       scope_type { :organization }
-      organization_id { SecureRandom.uuid }
     end
 
     trait :branch_scoped do
       scope_type { :branch }
-      organization_id { SecureRandom.uuid }
     end
   end
 end

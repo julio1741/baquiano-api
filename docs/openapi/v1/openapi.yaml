@@ -124,6 +124,141 @@ components:
         expires_at: { type: string, format: date-time, nullable: true }
         revoked_at: { type: string, format: date-time, nullable: true }
 
+    Organization:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        legal_name: { type: string }
+        display_name: { type: string }
+        organization_type: { type: string, enum: [merchant, platform, fleet_partner] }
+        status: { type: string, enum: [pending, active, suspended] }
+        default_currency: { type: string, example: VES }
+        onboarding_status: { type: string }
+        approved_at: { type: string, format: date-time, nullable: true }
+        suspended_at: { type: string, format: date-time, nullable: true }
+        suspension_reason: { type: string, nullable: true }
+
+    Merchant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        slug: { type: string }
+        description: { type: string, nullable: true }
+        vertical: { type: string, enum: [restaurant, grocery, pharmacy] }
+        status: { type: string, enum: [pending, active, suspended] }
+        accepts_baquiano_couriers: { type: boolean }
+        accepts_own_couriers: { type: boolean }
+
+    Branch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid }
+        merchant_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        status: { type: string, enum: [pending, active, suspended] }
+        delivery_model: { type: string, enum: [baquiano, merchant, hybrid] }
+        address_text: { type: string }
+        latitude: { type: number, format: double }
+        longitude: { type: number, format: double }
+        preparation_time_minutes: { type: integer, nullable: true }
+        accepts_cash: { type: boolean }
+        accepts_mobile_payment: { type: boolean }
+        accepts_pos_on_delivery: { type: boolean }
+        paused_at: { type: string, format: date-time, nullable: true }
+        pause_reason: { type: string, nullable: true }
+
+    CoveredBranch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        delivery_model: { type: string, enum: [baquiano, merchant, hybrid] }
+        preparation_time_minutes: { type: integer, nullable: true }
+        accepts_cash: { type: boolean }
+        accepts_mobile_payment: { type: boolean }
+        accepts_pos_on_delivery: { type: boolean }
+
+    Catalog:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string, enum: [draft, published, archived] }
+        version: { type: integer }
+        published_at: { type: string, format: date-time, nullable: true }
+
+    Category:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        catalog_id: { type: string, format: uuid }
+        parent_category_id: { type: string, format: uuid, nullable: true }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        position: { type: integer }
+        active: { type: boolean }
+
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        catalog_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        sku: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        product_type: { type: string }
+        base_price_amount: { type: integer, description: Minimum currency unit (e.g. centavos). }
+        currency: { type: string, example: VES }
+        active: { type: boolean }
+        age_restricted: { type: boolean }
+        prescription_required: { type: boolean }
+
+    CatalogView:
+      type: object
+      description: Read-only, customer-facing catalog — only published/active data.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        published_at: { type: string, format: date-time }
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              products:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    sku: { type: string }
+                    name: { type: string }
+                    description: { type: string, nullable: true }
+                    base_price_amount: { type: integer }
+                    currency: { type: string }
+                    age_restricted: { type: boolean }
+                    prescription_required: { type: boolean }
+
+    InventoryItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid, nullable: true }
+        product_variant_id: { type: string, format: uuid, nullable: true }
+        availability_status: { type: string, enum: [available, low_stock, unavailable] }
+        quantity: { type: integer, nullable: true }
+        track_quantity: { type: boolean }
+        unavailable_until: { type: string, format: date-time, nullable: true }
+
   parameters:
     role_assignment_reason:
       name: reason
@@ -416,4 +551,532 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RoleAssignment" }
         "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/admin/organizations:
+    get:
+      summary: List organizations
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Organization" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create an organization
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Organization" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/organizations/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show an organization
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update an organization
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+    delete:
+      summary: Delete an organization (blocked while it still has merchants/branches)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/merchants:
+    get:
+      summary: List merchants
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Merchant" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create a merchant under an organization
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Merchant" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/merchants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a merchant
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Merchant" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a merchant
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Merchant" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+    delete:
+      summary: Delete a merchant (blocked while it still has branches)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/branches:
+    get:
+      summary: List branches
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Branch" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create a branch (merchant must belong to the given organization)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Branch" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/branches/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a branch
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a branch
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+    delete:
+      summary: Delete a branch
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/branches/{id}/pause:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Pause a branch
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/branches/{id}/resume:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Resume a paused branch
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/branches:
+    get:
+      summary: List branches the current merchant staff member can manage
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Branch" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/merchant/branches/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show one of my branches
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    patch:
+      summary: Update operational settings for my branch
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/branches/{id}/pause:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Pause my branch (stop accepting orders)
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/branches/{id}/resume:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Resume my paused branch
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Branch" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/branches/{branch_id}/catalogs:
+    parameters:
+      - name: branch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List my branch's catalogs
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Catalog" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create a catalog for my branch
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Catalog" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/merchant/catalogs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a catalog
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Catalog" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    patch:
+      summary: Rename a catalog
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Catalog" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/catalogs/{id}/publish:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Publish a catalog (fails if it has no products)
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Catalog" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The catalog has no products yet (error.code catalog_empty)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/merchant/catalogs/{catalog_id}/categories:
+    parameters:
+      - name: catalog_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List a catalog's categories
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Category" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create a category
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Category" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/merchant/categories/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a category
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    patch:
+      summary: Update a category
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Category" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      summary: Delete a category (blocked while it still has products)
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/catalogs/{catalog_id}/products:
+    parameters:
+      - name: catalog_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List a catalog's products
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Product" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create a product
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422":
+          description: >
+            Validation failed — including a prescription_required product
+            left active while config.x.prescription_sales_enabled is false.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/merchant/products/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a product
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Product" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    patch:
+      summary: Update a product
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Product" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      summary: Delete a product
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/branches/{branch_id}/inventory_items:
+    parameters:
+      - name: branch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List my branch's inventory items
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/InventoryItem" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Set availability for a product or variant (upsert)
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InventoryItem" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/merchant/inventory_items/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Update an inventory item's availability
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/InventoryItem" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/customer/coverage:
+    get:
+      summary: List branches that deliver to a given point (unauthenticated)
+      tags: [customer]
+      parameters:
+        - name: latitude
+          in: query
+          required: true
+          schema: { type: number, format: double }
+        - name: longitude
+          in: query
+          required: true
+          schema: { type: number, format: double }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CoveredBranch" } }
+
+  /api/v1/customer/branches/{branch_id}/catalog:
+    parameters:
+      - name: branch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: View a branch's published catalog (unauthenticated)
+      tags: [customer]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogView" }
         "404": { $ref: "#/components/responses/NotFound" }

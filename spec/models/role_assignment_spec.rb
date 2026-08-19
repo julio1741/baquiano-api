@@ -28,7 +28,7 @@ RSpec.describe RoleAssignment, type: :model do
   it "requires both organization and branch for a branch-scoped role" do
     role = create(:role, :branch_scoped)
 
-    missing_branch = build(:role_assignment, role: role, organization_id: role.organization_id, branch_id: nil)
+    missing_branch = build(:role_assignment, role: role, organization_id: create(:organization).id, branch_id: nil)
 
     expect(missing_branch).not_to be_valid
     expect(missing_branch.errors[:branch_id]).to be_present

@@ -24,10 +24,17 @@ module App
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks])
 
-    # Domain modules live at app/domains/<domain>/{models,services,commands,
-    # policies,queries,serializers,jobs,events,subscribers,validators,errors}.
+    # Domain modules live at app/domains/<domain>/{services,queries,jobs,
+    # events,subscribers,validators,errors} — models/policies/serializers
+    # stay flat under app/models and app/policies, plain Rails convention.
     # Collapsing the second-level folder so files resolve as Orders::PlaceOrder
-    # instead of Orders::Services::PlaceOrder (see config/initializers/autoloading.rb).
+    # instead of Orders::Services::PlaceOrder (see config/initializers/autoloading.rb
+    # and docs/architecture/domains.md).
+
+    # Off until legal/regulatory validation for pharmacy sales in Venezuela
+    # happens (section 4.6 of the spec: never invent this). Product blocks
+    # activating a prescription_required item while this is false.
+    config.x.prescription_sales_enabled = false
 
     config.time_zone = "UTC"
     config.active_record.default_timezone = :utc
