@@ -1,0 +1,23 @@
+# PostgreSQL + PostGIS via activerecord-postgis-adapter.
+default: &default
+  adapter: postgis
+  encoding: unicode
+  host: <%= ENV.fetch("DATABASE_HOST", "db") %>
+  port: <%= ENV.fetch("DATABASE_PORT", 5432) %>
+  username: <%= ENV.fetch("DATABASE_USERNAME", "baquiano") %>
+  password: <%= ENV.fetch("DATABASE_PASSWORD", "baquiano") %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS", 5) %>
+
+development:
+  <<: *default
+  database: <%= ENV.fetch("DATABASE_NAME", "baquiano_development") %>
+
+test:
+  <<: *default
+  database: <%= ENV.fetch("TEST_DATABASE_NAME", "baquiano_test") %>
+
+# In production, provide DATABASE_URL (postgis://...) or the individual
+# DATABASE_* variables above via the platform's secret manager.
+production:
+  <<: *default
+  database: <%= ENV.fetch("DATABASE_NAME", "baquiano_production") %>

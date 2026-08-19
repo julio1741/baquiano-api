@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+env:
+  RAILS_ENV: test
+  DATABASE_HOST: localhost
+  DATABASE_USERNAME: baquiano
+  DATABASE_PASSWORD: baquiano
+  TEST_DATABASE_NAME: baquiano_test
+  REDIS_URL: redis://localhost:6379/0
+  RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: RuboCop
+        run: bundle exec rubocop
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Brakeman
+        run: bundle exec brakeman -q --no-pager
+      - name: bundler-audit
+        run: |
+          bundle exec bundler-audit check --update
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: baquiano
+          POSTGRES_PASSWORD: baquiano
+          POSTGRES_DB: baquiano_test
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd "pg_isready -U baquiano"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports: [ "6379:6379" ]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Prepare database
+        run: bin/rails db:prepare
+      - name: RSpec
+        run: bundle exec rspec
+      - name: Validate OpenAPI doc is in sync
+        run: |
+          bundle exec rake rswag:specs:swaggerize
+          git diff --exit-code docs/openapi || \
+            (echo "docs/openapi is out of date — run 'bundle exec rake rswag:specs:swaggerize' and commit the result" && exit 1)
