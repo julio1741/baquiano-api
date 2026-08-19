@@ -14,6 +14,13 @@ x-app: &app
     DATABASE_NAME: ${DATABASE_NAME:-baquiano_development}
     REDIS_URL: redis://redis:6379/0
     RAILS_MASTER_KEY: ${RAILS_MASTER_KEY:-}
+    # Dev-only values (not real secrets). Generate your own with
+    # `bin/rails db:encryption:init` for a real environment.
+    AR_ENCRYPTION_PRIMARY_KEY: ${AR_ENCRYPTION_PRIMARY_KEY:-OMmpSbKr3N7Y8Kp3rqfT0KD642Svr3Le}
+    AR_ENCRYPTION_DETERMINISTIC_KEY: ${AR_ENCRYPTION_DETERMINISTIC_KEY:-wY1rbrI8b7fXuwFCRsL3FS2mKq7TEHgk}
+    AR_ENCRYPTION_KEY_DERIVATION_SALT: ${AR_ENCRYPTION_KEY_DERIVATION_SALT:-K1sH5jSIp6Ue1F1CmOjuDSeg7NydpMm3}
+    # Pepper for HMAC blind-index digests (phone/email/document lookups).
+    BLIND_INDEX_PEPPER: ${BLIND_INDEX_PEPPER:-dev-only-pepper-do-not-use-in-production}
   volumes:
     - .:/rails
     - bundle_cache:/usr/local/bundle
@@ -35,6 +42,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-baquiano}"]
       interval: 5s

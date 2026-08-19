@@ -1,4 +1,6 @@
 class ApplicationController < ActionController::API
+  include Pundit::Authorization
+
   before_action :set_current_request_details
 
   # rescue_from matches the most recently registered handler first, so the
@@ -8,6 +10,7 @@ class ApplicationController < ActionController::API
   rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
   rescue_from ActionController::ParameterMissing, with: :render_bad_request
+  rescue_from Pundit::NotAuthorizedError, with: :render_forbidden
 
   private
 
@@ -45,6 +48,10 @@ class ApplicationController < ActionController::API
 
   def render_bad_request(error)
     render json: error_body("bad_request", error.message), status: :bad_request
+  end
+
+  def render_forbidden(_error)
+    render json: error_body("forbidden", "You are not authorized to perform this action"), status: :forbidden
   end
 
   def error_body(code, message, details = {})

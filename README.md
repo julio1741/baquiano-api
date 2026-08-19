@@ -96,8 +96,19 @@ se organiza `app/domains/<dominio>` y por qué. El resto sigue convención Rails
 
 ## Estado actual
 
-Esto es **Incremento 0** (base técnica) del plan del prompt maestro: proyecto
-Rails, Docker, Postgres/PostGIS, Redis, Sidekiq, CI, manejo de errores,
-logs estructurados, request/correlation id, health checks, OpenAPI. Los
-dominios de negocio (Identity, Orders, Payments, Dispatch, ...) se agregan en
-los incrementos siguientes.
+**Incremento 0** (base técnica): proyecto Rails, Docker, Postgres/PostGIS,
+Redis, Sidekiq, CI, manejo de errores, logs estructurados, request/
+correlation id, health checks, OpenAPI.
+
+**Incremento 1** (Identidad): usuarios (teléfono cifrado + digest para
+búsqueda), login por OTP (sin registro separado — la primera verificación
+crea la cuenta), dispositivos, sesiones con access token de corta duración
+(`Rails.application.message_verifier`, sin dependencia JWT) y refresh token
+rotativo con detección de reuso, roles/permisos/asignaciones con scope
+platform/organization/branch, Pundit deny-by-default. Ver
+[`docs/architecture/decisions.md`](docs/architecture/decisions.md) para las
+decisiones marcadas como pendientes de validación (proveedor de SMS, MFA de
+administración).
+
+Los dominios de negocio restantes (Organizations, Catalog, Orders, Payments,
+Dispatch, ...) se agregan en los incrementos siguientes.

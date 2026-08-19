@@ -1,27 +1,36 @@
 # Domain modules
 
-Each domain listed in the spec lives under `app/domains/<domain>/`, with role
-folders inside it collapsed into the domain's own namespace (configured in
+ActiveRecord models stay flat in `app/models` (plain Rails convention: `User`,
+`Session`, `Role`, ...) — Increment 1 showed that domain-namespacing models
+too would produce stuttering names (`Users::User`) for no benefit, since
+Pundit and associations already expect the plain top-level class name.
+
+Everything else that section 2 of the spec calls out per domain (services,
+policies, queries, jobs, events, subscribers, validators, domain-specific
+errors) lives under `app/domains/<domain>/`, with the role folder collapsed
+into the domain's own namespace (configured in
 `config/initializers/autoloading.rb`):
 
 ```
-app/domains/orders/
-  models/          -> Orders::<Model>
-  services/        -> Orders::PlaceOrder, Orders::TransitionOrder
-  policies/        -> Orders::<Something>Policy
-  queries/         -> Orders::<Something>Query
-  serializers/     -> Orders::<Something>Serializer
-  jobs/            -> Orders::<Something>Job
-  events/          -> Orders::<Something>Event
-  subscribers/     -> Orders::<Something>Subscriber
-  validators/      -> Orders::<Something>Validator
-  errors/          -> Orders::<Something>Error
+app/domains/identity/
+  services/        -> Identity::RequestOtp, Identity::VerifyOtp
+  jobs/            -> Identity::DeliverOtpJob
+
+app/domains/access_control/
+  queries/         -> AccessControl::HasPermission
+  services/        -> AccessControl::AssignRole, AccessControl::RevokeRole
 ```
 
-`app/domains/orders/services/place_order.rb` resolves to `Orders::PlaceOrder`
-(not `Orders::Services::PlaceOrder`), matching the command names used
+`app/domains/identity/services/verify_otp.rb` resolves to `Identity::VerifyOtp`
+(not `Identity::Services::VerifyOtp`), matching the command names used
 throughout the spec (`Orders::PlaceOrder`, `Payments::CreatePaymentIntent`,
 `Deliveries::AssignCourier`, ...).
+
+Pundit policies also stay flat in `app/policies` (`UserPolicy`, `RolePolicy`,
+...) — that's Pundit's own convention (`authorize record` looks up
+`"#{record.class}Policy"`), and a policy can lean on a domain query object
+for the actual scope-matching logic (e.g. `ApplicationPolicy#has_permission?`
+calls `AccessControl::HasPermission`).
 
 Domains are added incrementally, one per implementation increment (section 14
 of the master prompt) — folders are only created once they hold real code, to
@@ -29,7 +38,7 @@ avoid empty scaffolding:
 
 | Increment | Domains |
 |---|---|
-| 1 | Identity, AccessControl, Users |
+| 1 | Identity, AccessControl |
 | 2 | Organizations, Merchants, Catalog |
 | 3 | Customers, Addresses, Carts, Pricing |
 | 4 | Orders |
@@ -40,4 +49,4 @@ avoid empty scaffolding:
 Cross-cutting, non-domain code stays where Rails expects it:
 `app/controllers/api/v1/<customer|courier|merchant|admin|webhooks>`,
 `app/errors` (base error hierarchy shared by every domain),
-`app/lib` (e.g. `Current`).
+`app/lib` (`Current`, `BlindIndex`, `Phone`).

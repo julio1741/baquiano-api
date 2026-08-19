@@ -28,6 +28,11 @@ Rails.application.configure do
   # Disable request forgery protection in test environment.
   config.action_controller.allow_forgery_protection = false
 
+  # Rack::Attack's own Redis-backed throttle counters aren't environment-
+  # scoped by REDIS_URL the way config.cache_store is, so dev traffic and
+  # the test suite would otherwise share (and pollute) the same counters.
+  config.after_initialize { Rack::Attack.enabled = false }
+
   # Tell Action Mailer not to deliver emails to the real world.
   # The :test delivery method accumulates sent emails in the
   # ActionMailer::Base.deliveries array.

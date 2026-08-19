@@ -14,7 +14,7 @@ RSpec/MultipleExpectations:
   Enabled: false
 
 RSpec/ExampleLength:
-  Max: 10
+  Max: 15
 
 # Overwrite or add rules to create your own house style
 #

@@ -3,21 +3,417 @@ openapi: 3.1.0
 info:
   title: Baquiano API
   version: v1
-  description: Backend del MVP de Baquiano (pedidos y entregas — Barinas, Venezuela).
-    Consumido por las apps de clientes/repartidores, el portal de comercios y la consola
-    administrativa.
-paths: {}
+  description: >
+    Backend del MVP de Baquiano (pedidos y entregas — Barinas, Venezuela).
+    Consumido por las apps de clientes/repartidores, el portal de comercios
+    y la consola administrativa.
 servers:
-- url: http://localhost:3001
-  description: Local development (docker compose)
+  - url: http://localhost:3001
+    description: Local development (docker compose)
 tags:
-- name: customer
-  description: "/api/v1/customer"
-- name: courier
-  description: "/api/v1/courier"
-- name: merchant
-  description: "/api/v1/merchant"
-- name: admin
-  description: "/api/v1/admin"
-- name: webhooks
-  description: "/api/v1/webhooks"
+  - name: customer
+    description: /api/v1/customer
+  - name: courier
+    description: /api/v1/courier
+  - name: merchant
+    description: /api/v1/merchant
+  - name: admin
+    description: /api/v1/admin
+  - name: webhooks
+    description: /api/v1/webhooks
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Short-lived access token returned by .../otp/verify or .../session/refresh.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object }
+            request_id: { type: string }
+            correlation_id: { type: string }
+          required: [code, message]
+      required: [error]
+
+    Device:
+      type: object
+      properties:
+        installation_id: { type: string }
+        platform: { type: string, enum: [ios, android, web] }
+        app_version: { type: string }
+        os_version: { type: string }
+        device_model: { type: string }
+        push_token: { type: string }
+        push_provider: { type: string }
+        fingerprint: { type: string }
+      required: [installation_id, platform]
+
+    OtpChallenge:
+      type: object
+      properties:
+        otp_challenge_id: { type: string, format: uuid }
+        expires_at: { type: string, format: date-time }
+        dev_only_code:
+          type: string
+          description: Only present outside production, while there is no SMS gateway wired up.
+
+    Session:
+      type: object
+      properties:
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string }
+        access_token: { type: string }
+        access_token_expires_at: { type: string, format: date-time }
+        refresh_token: { type: string }
+
+    Profile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string, nullable: true }
+        preferred_language: { type: string }
+        timezone: { type: string }
+        status: { type: string }
+        phone_verified_at: { type: string, format: date-time, nullable: true }
+
+    Role:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        code: { type: string }
+        description: { type: string, nullable: true }
+        scope_type: { type: string, enum: [platform, organization, branch] }
+        organization_id: { type: string, format: uuid, nullable: true }
+        system_role: { type: boolean }
+        active: { type: boolean }
+
+    Permission:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        resource: { type: string }
+        action: { type: string }
+        code: { type: string }
+        description: { type: string, nullable: true }
+        sensitive: { type: boolean }
+
+    RoleAssignment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        role_id: { type: string, format: uuid }
+        organization_id: { type: string, format: uuid, nullable: true }
+        branch_id: { type: string, format: uuid, nullable: true }
+        starts_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+
+  parameters:
+    role_assignment_reason:
+      name: reason
+      in: query
+      schema: { type: string }
+      description: Optional revocation reason.
+
+  requestBodies:
+    RequestOtp:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              phone_country_code: { type: string, example: "58" }
+              phone_number: { type: string, example: "4141234567" }
+            required: [phone_country_code, phone_number]
+
+    VerifyOtp:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              phone_country_code: { type: string }
+              phone_number: { type: string }
+              code: { type: string, example: "123456" }
+              first_name: { type: string, description: Required only the first time this phone verifies. }
+              last_name: { type: string, description: Required only the first time this phone verifies. }
+              device: { $ref: "#/components/schemas/Device" }
+            required: [phone_country_code, phone_number, code, device]
+
+    RefreshSession:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              refresh_token: { type: string }
+            required: [refresh_token]
+
+  responses:
+    NotFound: { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Unauthorized: { description: Missing or invalid access token, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Forbidden: { description: Not authorized for this action, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    Conflict: { description: State conflict (e.g. otp already used/expired/exhausted), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    UnprocessableContent: { description: Validation failed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+paths:
+  /api/v1/{role}/otp:
+    parameters:
+      - name: role
+        in: path
+        required: true
+        schema: { type: string, enum: [customer, courier, merchant, admin] }
+    post:
+      summary: Request an OTP for a phone number
+      tags: [customer, courier, merchant, admin]
+      requestBody: { $ref: "#/components/requestBodies/RequestOtp" }
+      responses:
+        "201":
+          description: Challenge created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OtpChallenge" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/v1/{role}/otp/verify:
+    parameters:
+      - name: role
+        in: path
+        required: true
+        schema: { type: string, enum: [customer, courier, merchant, admin] }
+    post:
+      summary: Verify an OTP; creates the account on first verification and issues a session
+      tags: [customer, courier, merchant, admin]
+      requestBody: { $ref: "#/components/requestBodies/VerifyOtp" }
+      responses:
+        "200":
+          description: Session issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/{role}/session/refresh:
+    parameters:
+      - name: role
+        in: path
+        required: true
+        schema: { type: string, enum: [customer, courier, merchant, admin] }
+    post:
+      summary: Rotate a refresh token for a new session
+      tags: [customer, courier, merchant, admin]
+      requestBody: { $ref: "#/components/requestBodies/RefreshSession" }
+      responses:
+        "200":
+          description: New session issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "403":
+          description: Session expired, device blocked, or refresh token reuse detected (see error.code)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/{role}/session:
+    parameters:
+      - name: role
+        in: path
+        required: true
+        schema: { type: string, enum: [customer, courier, merchant, admin] }
+    delete:
+      summary: Log out (revoke the current session)
+      tags: [customer, courier, merchant, admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Session revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/customer/profile:
+    get:
+      summary: View my profile
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      summary: Update my profile
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                first_name: { type: string }
+                last_name: { type: string }
+                email: { type: string }
+                preferred_language: { type: string }
+                timezone: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/roles:
+    get:
+      summary: List roles
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Role" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create a role
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                code: { type: string }
+                description: { type: string }
+                scope_type: { type: string, enum: [platform, organization, branch] }
+                organization_id: { type: string, format: uuid }
+                system_role: { type: boolean }
+                active: { type: boolean }
+              required: [name, code, scope_type]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Role" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/roles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a role
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Role" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Update a role
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Role" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+    delete:
+      summary: Delete a role
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/permissions:
+    get:
+      summary: List the permission catalog (seeded, read-only)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Permission" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/role_assignments:
+    post:
+      summary: Assign a role to a user
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: { type: string, format: uuid }
+                role_id: { type: string, format: uuid }
+                organization_id: { type: string, format: uuid }
+                branch_id: { type: string, format: uuid }
+                starts_at: { type: string, format: date-time }
+                expires_at: { type: string, format: date-time }
+              required: [user_id, role_id]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleAssignment" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/role_assignments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      summary: Revoke a role assignment
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/role_assignment_reason"
+      responses:
+        "200":
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleAssignment" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }

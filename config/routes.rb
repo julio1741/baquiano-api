@@ -19,6 +19,39 @@ Rails.application.routes.draw do
       # Domain routes are added incrementally per section 6 of the spec:
       # /api/v1/customer, /api/v1/courier, /api/v1/merchant, /api/v1/admin,
       # /api/v1/webhooks.
+
+      namespace :customer do
+        post "otp", to: "otps#create"
+        post "otp/verify", to: "otps#verify"
+        post "session/refresh", to: "sessions#refresh"
+        delete "session", to: "sessions#destroy"
+        resource :profile, only: %i[show update], controller: "profiles"
+      end
+
+      namespace :courier do
+        post "otp", to: "otps#create"
+        post "otp/verify", to: "otps#verify"
+        post "session/refresh", to: "sessions#refresh"
+        delete "session", to: "sessions#destroy"
+      end
+
+      namespace :merchant do
+        post "otp", to: "otps#create"
+        post "otp/verify", to: "otps#verify"
+        post "session/refresh", to: "sessions#refresh"
+        delete "session", to: "sessions#destroy"
+      end
+
+      namespace :admin do
+        post "otp", to: "otps#create"
+        post "otp/verify", to: "otps#verify"
+        post "session/refresh", to: "sessions#refresh"
+        delete "session", to: "sessions#destroy"
+
+        resources :roles, only: %i[index show create update destroy]
+        resources :permissions, only: [ :index ]
+        resources :role_assignments, only: %i[create destroy]
+      end
     end
   end
 end
