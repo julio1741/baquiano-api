@@ -259,6 +259,58 @@ components:
         track_quantity: { type: boolean }
         unavailable_until: { type: string, format: date-time, nullable: true }
 
+    Address:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string, nullable: true }
+        recipient_name: { type: string }
+        original_text: { type: string }
+        latitude: { type: number, format: double }
+        longitude: { type: number, format: double }
+        is_default: { type: boolean }
+        covered:
+          type: boolean
+          description: Whether any service area currently covers this point (informational only).
+        archived_at: { type: string, format: date-time, nullable: true }
+
+    CartItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        product_variant_id: { type: string, format: uuid, nullable: true }
+        quantity: { type: integer }
+        unit_price_amount_snapshot: { type: integer }
+        line_total: { type: integer }
+
+    Cart:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        branch_id: { type: string, format: uuid }
+        status: { type: string, enum: [active, converted, abandoned, expired] }
+        currency: { type: string }
+        expires_at: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CartItem" }
+
+    Quote:
+      type: object
+      description: >
+        Every amount is server-computed — section 4.7 of the spec: the
+        client never sends a trustworthy total.
+      properties:
+        id: { type: string, format: uuid }
+        currency: { type: string }
+        subtotal_amount: { type: integer }
+        tax_amount: { type: integer }
+        delivery_fee_amount: { type: integer }
+        service_fee_amount: { type: integer, description: Always 0 — no service fee configuration exists yet. }
+        total_amount: { type: integer }
+        expires_at: { type: string, format: date-time }
+
   parameters:
     role_assignment_reason:
       name: reason
@@ -1080,3 +1132,154 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/CatalogView" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/customer/addresses:
+    get:
+      summary: List my addresses
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Address" } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Create an address
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Address" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/customer/addresses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Update an address (setting is_default unsets any previous default)
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Address" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      summary: Archive an address (soft delete — sets archived_at)
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Archived }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/customer/branches/{branch_id}/cart:
+    parameters:
+      - name: branch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Get or create my active cart for this branch
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Cart" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/customer/carts/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a cart and its items
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Cart" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/customer/carts/{cart_id}/items:
+    parameters:
+      - name: cart_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Add an item to the cart (snapshots the current price)
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CartItem" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/customer/cart_items/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Update a cart item's quantity
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CartItem" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      summary: Remove a cart item
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: Removed }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/customer/carts/{cart_id}/quotes:
+    parameters:
+      - name: cart_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Generate a quote for the cart (idempotent per customer+idempotency_key)
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created (or the original quote, if this idempotency_key was already used)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Quote" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The cart has no items (error.code cart_empty)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/customer/quotes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a quote
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Quote" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }

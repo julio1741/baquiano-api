@@ -46,9 +46,13 @@ Api::V1::Merchant`), so it isn't caught by RuboCop/Brakeman — only by
 actually exercising the code path.
 
 Every `app/controllers/api/v1/**/*.rb` file that touches the `Merchant`
-model must spell it `::Merchant`. The same trap will resurface for
-`Customer` (Increment 3) and `Courier` (Increment 5) once those models and
-their matching route namespaces both exist — qualify those the same way.
+model must spell it `::Merchant`. Same trap for `Customer`, confirmed in
+Increment 3 once the model existed alongside `Api::V1::Customer` — avoided
+there by never referencing the bare model from inside `Api::V1::Customer::*`
+controllers, only through associations (`current_user.customer`,
+`current_customer.addresses`). `::Customer` would still be needed by any
+code that does `Customer.find(...)` or similar from in there. `Courier`
+(Increment 5) will need the same care.
 
 Domains are added incrementally, one per implementation increment (section 14
 of the master prompt) — folders are only created once they hold real code, to
@@ -58,7 +62,7 @@ avoid empty scaffolding:
 |---|---|
 | 1 | Identity, AccessControl |
 | 2 | Organizations, Merchants, Catalog |
-| 3 | Customers, Addresses, Carts, Pricing |
+| 3 | Customers, Carts, Pricing |
 | 4 | Orders |
 | 5 | Couriers, Dispatch, Deliveries, Geography |
 | 6 | Payments, Accounting, Reconciliation |

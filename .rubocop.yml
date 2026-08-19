@@ -14,7 +14,7 @@ RSpec/MultipleExpectations:
   Enabled: false
 
 RSpec/ExampleLength:
-  Max: 20
+  Max: 30
 
 # End-to-end lifecycle specs (create → assign role → act as staff → publish)
 # legitimately need more than 5 lets to set up a realistic scenario.

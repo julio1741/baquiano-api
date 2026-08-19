@@ -29,6 +29,15 @@ Rails.application.routes.draw do
 
         get "coverage", to: "coverage#show"
         get "branches/:branch_id/catalog", to: "catalogs#show"
+
+        resources :addresses, only: %i[index create update destroy]
+        post "branches/:branch_id/cart", to: "carts#create"
+        resources :carts, only: [ :show ] do
+          resources :cart_items, only: [ :create ], path: "items"
+          resources :quotes, only: [ :create ]
+        end
+        resources :cart_items, only: %i[update destroy]
+        resources :quotes, only: [ :show ]
       end
 
       namespace :courier do

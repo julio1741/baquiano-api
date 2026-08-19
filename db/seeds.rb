@@ -73,3 +73,13 @@ Zone.find_or_create_by!(city: barinas, code: "barinas-centro") do |zone|
   zone.geometry = barinas_bounding_box
   zone.risk_level = "standard"
 end
+
+# Placeholder so a quote can be generated end-to-end in development without
+# manual setup — the actual fee needs a real commercial decision before
+# launch (see docs/architecture/decisions.md).
+DeliveryFeeRule.find_or_create_by!(city: barinas, name: "Tarifa fija de referencia") do |rule|
+  rule.calculation_type = "fixed"
+  rule.base_amount = 150_00
+  rule.currency = "VES"
+  rule.valid_from = Date.current
+end

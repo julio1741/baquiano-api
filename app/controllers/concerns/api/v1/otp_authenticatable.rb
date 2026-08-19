@@ -28,6 +28,7 @@ module Api
           first_name: verify_params[:first_name],
           last_name: verify_params[:last_name]
         )
+        after_verify(result)
         render json: session_body(result), status: :ok
       end
 
@@ -48,6 +49,11 @@ module Api
       def app_type
         raise NotImplementedError, "#{self.class} must define #app_type"
       end
+
+      # Hook for namespace-specific post-verification side effects (e.g. the
+      # customer namespace ensures a Customer profile exists). No-op by
+      # default.
+      def after_verify(_result); end
 
       def otp_purpose
         params[:purpose].presence || "sign_in"

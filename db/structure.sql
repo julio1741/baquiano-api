@@ -29,6 +29,34 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: addresses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.addresses (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_id uuid NOT NULL,
+    city_id uuid NOT NULL,
+    label character varying,
+    recipient_name character varying NOT NULL,
+    contact_phone_encrypted text,
+    original_text character varying NOT NULL,
+    normalized_text character varying,
+    building character varying,
+    floor character varying,
+    apartment character varying,
+    landmark character varying,
+    delivery_instructions character varying,
+    location public.geography(Point,4326) NOT NULL,
+    location_accuracy_meters double precision,
+    validated_at timestamp with time zone,
+    is_default boolean DEFAULT false NOT NULL,
+    archived_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: ar_internal_metadata; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -91,6 +119,62 @@ CREATE TABLE public.business_hours (
 
 
 --
+-- Name: cart_item_modifiers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cart_item_modifiers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    cart_item_id uuid NOT NULL,
+    modifier_id uuid NOT NULL,
+    quantity integer DEFAULT 1 NOT NULL,
+    additional_price_amount_snapshot bigint NOT NULL,
+    currency character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT cart_item_modifiers_price_non_negative CHECK ((additional_price_amount_snapshot >= 0)),
+    CONSTRAINT cart_item_modifiers_quantity_positive CHECK ((quantity > 0))
+);
+
+
+--
+-- Name: cart_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cart_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    cart_id uuid NOT NULL,
+    product_id uuid NOT NULL,
+    product_variant_id uuid,
+    quantity integer NOT NULL,
+    unit_price_amount_snapshot bigint NOT NULL,
+    currency character varying NOT NULL,
+    notes character varying,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT cart_items_quantity_positive CHECK ((quantity > 0)),
+    CONSTRAINT cart_items_unit_price_non_negative CHECK ((unit_price_amount_snapshot >= 0))
+);
+
+
+--
+-- Name: carts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.carts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    customer_id uuid NOT NULL,
+    branch_id uuid NOT NULL,
+    status character varying DEFAULT 'active'::character varying NOT NULL,
+    currency character varying NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: catalogs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -143,6 +227,50 @@ CREATE TABLE public.cities (
 
 
 --
+-- Name: customers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.customers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    status character varying DEFAULT 'active'::character varying NOT NULL,
+    default_address_id uuid,
+    risk_level character varying DEFAULT 'standard'::character varying NOT NULL,
+    total_completed_orders integer DEFAULT 0 NOT NULL,
+    last_order_at timestamp with time zone,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT customers_total_completed_orders_non_negative CHECK ((total_completed_orders >= 0))
+);
+
+
+--
+-- Name: delivery_fee_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.delivery_fee_rules (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    city_id uuid NOT NULL,
+    zone_id uuid,
+    name character varying NOT NULL,
+    calculation_type character varying NOT NULL,
+    base_amount bigint NOT NULL,
+    per_kilometer_amount bigint,
+    minimum_amount bigint,
+    maximum_amount bigint,
+    currency character varying NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    valid_from date NOT NULL,
+    valid_until date,
+    configuration jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT delivery_fee_rules_base_amount_non_negative CHECK ((base_amount >= 0))
+);
+
+
+--
 -- Name: devices; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -164,6 +292,28 @@ CREATE TABLE public.devices (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: exchange_rates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exchange_rates (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    base_currency character varying NOT NULL,
+    quote_currency character varying NOT NULL,
+    rate_numerator bigint NOT NULL,
+    rate_denominator bigint NOT NULL,
+    source character varying NOT NULL,
+    rate_type character varying NOT NULL,
+    effective_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone,
+    created_by_user_id uuid NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT exchange_rates_rate_denominator_positive CHECK ((rate_denominator > 0)),
+    CONSTRAINT exchange_rates_rate_numerator_positive CHECK ((rate_numerator > 0))
 );
 
 
@@ -360,6 +510,36 @@ CREATE TABLE public.products (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     CONSTRAINT products_base_price_amount_non_negative CHECK ((base_price_amount >= 0))
+);
+
+
+--
+-- Name: quotes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.quotes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    cart_id uuid NOT NULL,
+    customer_id uuid NOT NULL,
+    branch_id uuid NOT NULL,
+    address_id uuid NOT NULL,
+    currency character varying NOT NULL,
+    subtotal_amount bigint NOT NULL,
+    discount_amount bigint DEFAULT 0 NOT NULL,
+    tax_amount bigint DEFAULT 0 NOT NULL,
+    delivery_fee_amount bigint DEFAULT 0 NOT NULL,
+    service_fee_amount bigint DEFAULT 0 NOT NULL,
+    total_amount bigint NOT NULL,
+    exchange_rate_id uuid,
+    exchange_rate_value numeric(20,10),
+    pricing_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    consumed_at timestamp with time zone,
+    idempotency_key character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT quotes_subtotal_amount_non_negative CHECK ((subtotal_amount >= 0)),
+    CONSTRAINT quotes_total_amount_non_negative CHECK ((total_amount >= 0))
 );
 
 
@@ -561,6 +741,14 @@ CREATE TABLE public.zones (
 
 
 --
+-- Name: addresses addresses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.addresses
+    ADD CONSTRAINT addresses_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ar_internal_metadata ar_internal_metadata_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -582,6 +770,30 @@ ALTER TABLE ONLY public.branches
 
 ALTER TABLE ONLY public.business_hours
     ADD CONSTRAINT business_hours_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cart_item_modifiers cart_item_modifiers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cart_item_modifiers
+    ADD CONSTRAINT cart_item_modifiers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cart_items cart_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cart_items
+    ADD CONSTRAINT cart_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: carts carts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.carts
+    ADD CONSTRAINT carts_pkey PRIMARY KEY (id);
 
 
 --
@@ -609,11 +821,35 @@ ALTER TABLE ONLY public.cities
 
 
 --
+-- Name: customers customers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: delivery_fee_rules delivery_fee_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_fee_rules
+    ADD CONSTRAINT delivery_fee_rules_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: devices devices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.devices
     ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: exchange_rates exchange_rates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exchange_rates
+    ADD CONSTRAINT exchange_rates_pkey PRIMARY KEY (id);
 
 
 --
@@ -686,6 +922,14 @@ ALTER TABLE ONLY public.product_variants
 
 ALTER TABLE ONLY public.products
     ADD CONSTRAINT products_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: quotes quotes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotes
+    ADD CONSTRAINT quotes_pkey PRIMARY KEY (id);
 
 
 --
@@ -784,6 +1028,34 @@ CREATE INDEX idx_on_phone_digest_purpose_created_at_11442c137d ON public.otp_cha
 
 
 --
+-- Name: index_addresses_on_city_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_addresses_on_city_id ON public.addresses USING btree (city_id);
+
+
+--
+-- Name: index_addresses_on_customer_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_addresses_on_customer_id ON public.addresses USING btree (customer_id);
+
+
+--
+-- Name: index_addresses_on_location; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_addresses_on_location ON public.addresses USING gist (location);
+
+
+--
+-- Name: index_addresses_one_default_per_customer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_addresses_one_default_per_customer ON public.addresses USING btree (customer_id) WHERE is_default;
+
+
+--
 -- Name: index_branches_on_location; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -833,6 +1105,62 @@ CREATE UNIQUE INDEX index_business_hours_uniqueness ON public.business_hours USI
 
 
 --
+-- Name: index_cart_item_modifiers_on_cart_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cart_item_modifiers_on_cart_item_id ON public.cart_item_modifiers USING btree (cart_item_id);
+
+
+--
+-- Name: index_cart_item_modifiers_on_modifier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cart_item_modifiers_on_modifier_id ON public.cart_item_modifiers USING btree (modifier_id);
+
+
+--
+-- Name: index_cart_items_on_cart_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cart_items_on_cart_id ON public.cart_items USING btree (cart_id);
+
+
+--
+-- Name: index_cart_items_on_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cart_items_on_product_id ON public.cart_items USING btree (product_id);
+
+
+--
+-- Name: index_cart_items_on_product_variant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cart_items_on_product_variant_id ON public.cart_items USING btree (product_variant_id);
+
+
+--
+-- Name: index_carts_on_branch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_carts_on_branch_id ON public.carts USING btree (branch_id);
+
+
+--
+-- Name: index_carts_on_customer_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_carts_on_customer_id ON public.carts USING btree (customer_id);
+
+
+--
+-- Name: index_carts_one_active_per_customer_and_branch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_carts_one_active_per_customer_and_branch ON public.carts USING btree (customer_id, branch_id) WHERE ((status)::text = 'active'::text);
+
+
+--
 -- Name: index_catalogs_on_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -861,6 +1189,27 @@ CREATE UNIQUE INDEX index_cities_on_name_and_state_name_and_country_code ON publ
 
 
 --
+-- Name: index_customers_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_customers_on_user_id ON public.customers USING btree (user_id);
+
+
+--
+-- Name: index_delivery_fee_rules_on_city_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_delivery_fee_rules_on_city_id ON public.delivery_fee_rules USING btree (city_id);
+
+
+--
+-- Name: index_delivery_fee_rules_on_zone_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_delivery_fee_rules_on_zone_id ON public.delivery_fee_rules USING btree (zone_id);
+
+
+--
 -- Name: index_devices_on_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -872,6 +1221,20 @@ CREATE INDEX index_devices_on_user_id ON public.devices USING btree (user_id);
 --
 
 CREATE UNIQUE INDEX index_devices_on_user_id_and_installation_id ON public.devices USING btree (user_id, installation_id);
+
+
+--
+-- Name: index_exchange_rates_on_created_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_exchange_rates_on_created_by_user_id ON public.exchange_rates USING btree (created_by_user_id);
+
+
+--
+-- Name: index_exchange_rates_uniqueness; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_exchange_rates_uniqueness ON public.exchange_rates USING btree (base_currency, quote_currency, effective_at, rate_type);
 
 
 --
@@ -1026,6 +1389,48 @@ CREATE INDEX index_products_on_category_id ON public.products USING btree (categ
 --
 
 CREATE INDEX index_products_on_tax_rule_id ON public.products USING btree (tax_rule_id);
+
+
+--
+-- Name: index_quotes_on_address_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quotes_on_address_id ON public.quotes USING btree (address_id);
+
+
+--
+-- Name: index_quotes_on_branch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quotes_on_branch_id ON public.quotes USING btree (branch_id);
+
+
+--
+-- Name: index_quotes_on_cart_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quotes_on_cart_id ON public.quotes USING btree (cart_id);
+
+
+--
+-- Name: index_quotes_on_customer_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quotes_on_customer_id ON public.quotes USING btree (customer_id);
+
+
+--
+-- Name: index_quotes_on_customer_id_and_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_quotes_on_customer_id_and_idempotency_key ON public.quotes USING btree (customer_id, idempotency_key);
+
+
+--
+-- Name: index_quotes_on_exchange_rate_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_quotes_on_exchange_rate_id ON public.quotes USING btree (exchange_rate_id);
 
 
 --
@@ -1271,6 +1676,22 @@ ALTER TABLE ONLY public.modifier_groups
 
 
 --
+-- Name: quotes fk_rails_16d0e8335d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotes
+    ADD CONSTRAINT fk_rails_16d0e8335d FOREIGN KEY (exchange_rate_id) REFERENCES public.exchange_rates(id);
+
+
+--
+-- Name: delivery_fee_rules fk_rails_20a5c6ac89; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_fee_rules
+    ADD CONSTRAINT fk_rails_20a5c6ac89 FOREIGN KEY (city_id) REFERENCES public.cities(id);
+
+
+--
 -- Name: catalogs fk_rails_2236035560; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1311,6 +1732,14 @@ ALTER TABLE ONLY public.business_hours
 
 
 --
+-- Name: cart_item_modifiers fk_rails_3daba72fa7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cart_item_modifiers
+    ADD CONSTRAINT fk_rails_3daba72fa7 FOREIGN KEY (modifier_id) REFERENCES public.modifiers(id);
+
+
+--
 -- Name: devices fk_rails_410b63ef65; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1335,11 +1764,35 @@ ALTER TABLE ONLY public.inventory_items
 
 
 --
+-- Name: carts fk_rails_4b74985b3d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.carts
+    ADD CONSTRAINT fk_rails_4b74985b3d FOREIGN KEY (branch_id) REFERENCES public.branches(id);
+
+
+--
 -- Name: products fk_rails_4b89e3ebbb; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.products
     ADD CONSTRAINT fk_rails_4b89e3ebbb FOREIGN KEY (catalog_id) REFERENCES public.catalogs(id);
+
+
+--
+-- Name: cart_item_modifiers fk_rails_506772ae83; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cart_item_modifiers
+    ADD CONSTRAINT fk_rails_506772ae83 FOREIGN KEY (cart_item_id) REFERENCES public.cart_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: quotes fk_rails_5e1368862f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotes
+    ADD CONSTRAINT fk_rails_5e1368862f FOREIGN KEY (branch_id) REFERENCES public.branches(id);
 
 
 --
@@ -1375,11 +1828,27 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: cart_items fk_rails_681a180e84; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cart_items
+    ADD CONSTRAINT fk_rails_681a180e84 FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
 -- Name: user_identities fk_rails_684b0e1ce0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_identities
     ADD CONSTRAINT fk_rails_684b0e1ce0 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: cart_items fk_rails_6cdb1f0139; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cart_items
+    ADD CONSTRAINT fk_rails_6cdb1f0139 FOREIGN KEY (cart_id) REFERENCES public.carts(id) ON DELETE CASCADE;
 
 
 --
@@ -1399,6 +1868,14 @@ ALTER TABLE ONLY public.modifiers
 
 
 --
+-- Name: customers fk_rails_8b503d0545; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT fk_rails_8b503d0545 FOREIGN KEY (default_address_id) REFERENCES public.addresses(id) ON DELETE SET NULL;
+
+
+--
 -- Name: role_assignments fk_rails_8ddd873ee0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1407,11 +1884,43 @@ ALTER TABLE ONLY public.role_assignments
 
 
 --
+-- Name: quotes fk_rails_8ecd5fdf28; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotes
+    ADD CONSTRAINT fk_rails_8ecd5fdf28 FOREIGN KEY (cart_id) REFERENCES public.carts(id) ON DELETE CASCADE;
+
+
+--
 -- Name: inventory_items fk_rails_906b79f0d3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inventory_items
     ADD CONSTRAINT fk_rails_906b79f0d3 FOREIGN KEY (product_variant_id) REFERENCES public.product_variants(id);
+
+
+--
+-- Name: quotes fk_rails_908381b3ca; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotes
+    ADD CONSTRAINT fk_rails_908381b3ca FOREIGN KEY (address_id) REFERENCES public.addresses(id);
+
+
+--
+-- Name: customers fk_rails_9917eeaf5d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.customers
+    ADD CONSTRAINT fk_rails_9917eeaf5d FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: quotes fk_rails_a1ab65f1f7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.quotes
+    ADD CONSTRAINT fk_rails_a1ab65f1f7 FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
 
 
 --
@@ -1431,11 +1940,27 @@ ALTER TABLE ONLY public.sessions
 
 
 --
+-- Name: addresses fk_rails_ab048f757c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.addresses
+    ADD CONSTRAINT fk_rails_ab048f757c FOREIGN KEY (city_id) REFERENCES public.cities(id);
+
+
+--
 -- Name: sessions fk_rails_aec6d92ac2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT fk_rails_aec6d92ac2 FOREIGN KEY (device_id) REFERENCES public.devices(id) ON DELETE CASCADE;
+
+
+--
+-- Name: service_areas fk_rails_b351f1b628; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.service_areas
+    ADD CONSTRAINT fk_rails_b351f1b628 FOREIGN KEY (delivery_fee_rule_id) REFERENCES public.delivery_fee_rules(id) ON DELETE SET NULL;
 
 
 --
@@ -1471,6 +1996,14 @@ ALTER TABLE ONLY public.role_assignments
 
 
 --
+-- Name: addresses fk_rails_d5f9efddd3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.addresses
+    ADD CONSTRAINT fk_rails_d5f9efddd3 FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
+
+
+--
 -- Name: branches fk_rails_d819cb9507; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1484,6 +2017,14 @@ ALTER TABLE ONLY public.branches
 
 ALTER TABLE ONLY public.product_variants
     ADD CONSTRAINT fk_rails_dae52f850b FOREIGN KEY (product_id) REFERENCES public.products(id);
+
+
+--
+-- Name: carts fk_rails_e02ab95379; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.carts
+    ADD CONSTRAINT fk_rails_e02ab95379 FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE CASCADE;
 
 
 --
@@ -1503,11 +2044,27 @@ ALTER TABLE ONLY public.service_areas
 
 
 --
+-- Name: delivery_fee_rules fk_rails_e35321d094; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_fee_rules
+    ADD CONSTRAINT fk_rails_e35321d094 FOREIGN KEY (zone_id) REFERENCES public.zones(id);
+
+
+--
 -- Name: role_assignments fk_rails_e4bfc1cd2c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_assignments
     ADD CONSTRAINT fk_rails_e4bfc1cd2c FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: exchange_rates fk_rails_f3b7ba7619; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exchange_rates
+    ADD CONSTRAINT fk_rails_f3b7ba7619 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
 
 
 --
@@ -1527,12 +2084,30 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: cart_items fk_rails_ffa5d55b09; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cart_items
+    ADD CONSTRAINT fk_rails_ffa5d55b09 FOREIGN KEY (product_variant_id) REFERENCES public.product_variants(id);
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260819232136'),
+('20260819232135'),
+('20260819232133'),
+('20260819232132'),
+('20260819232047'),
+('20260819232045'),
+('20260819232044'),
+('20260819231942'),
+('20260819231915'),
+('20260819231913'),
 ('20260819025002'),
 ('20260819024858'),
 ('20260819024857'),

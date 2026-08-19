@@ -62,6 +62,30 @@ enabling pharmacy prescription sales needs legal/regulatory sign-off first,
 and probably a real mechanism (uploaded prescription, pharmacist review)
 that doesn't exist yet.
 
+## Delivery fee is a made-up placeholder rate
+
+`db/seeds.rb` seeds one fixed `DeliveryFeeRule` for Barinas (150.00 VES) so
+`Pricing::GenerateQuote` can be exercised end-to-end in development without
+manual setup. This is not a real commercial rate — it needs a pricing
+decision (and probably distance-based tiers, not a flat fee) before this
+goes anywhere near production.
+
+## No service fee configuration exists
+
+`Pricing::GenerateQuote` always sets `service_fee_amount` to 0 — the spec's
+`quotes`/`orders` tables have the column, but no table or rule configures
+what a service fee should be. Needs a decision on whether/how Baquiano
+charges a platform service fee before this stays hardcoded to zero.
+
+## Quotes don't do currency conversion yet
+
+`quotes.exchange_rate_id`/`exchange_rate_value` stay null — carts and
+quotes are priced entirely in the branch's own currency (VES for every
+seeded branch). The `ExchangeRate` model exists and is validated/tested,
+but `Pricing::GenerateQuote` never reaches for it. Needs a product decision
+on when/whether a customer should see a USD-equivalent total before that
+logic gets written.
+
 ## Organizations/merchants are hard-deletable via the admin API
 
 `Api::V1::Admin::OrganizationsController`/`MerchantsController` expose

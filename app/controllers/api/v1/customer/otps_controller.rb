@@ -7,6 +7,10 @@ module Api
         private
 
         def app_type = "customer"
+
+        def after_verify(result)
+          Customers::EnsureProfile.call(user: result.user)
+        end
       end
     end
   end

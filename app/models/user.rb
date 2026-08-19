@@ -9,6 +9,7 @@ class User < ApplicationRecord
   has_many :sessions, dependent: :destroy
   has_many :devices, dependent: :destroy
   has_many :role_assignments, dependent: :destroy
+  has_one :customer, dependent: :destroy
 
   enum :status, {
     pending_verification: "pending_verification",

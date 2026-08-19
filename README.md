@@ -122,5 +122,21 @@ de comercio (pausar sucursal, gestionar catálogo, disponibilidad) y
 endpoints públicos de cliente (cobertura, catálogo publicado) sin
 autenticación. 79 tests en total.
 
-Los dominios de negocio restantes (Customers, Carts, Orders, Payments,
-Dispatch, ...) se agregan en los incrementos siguientes.
+**Incremento 3** (Cliente y cotización): perfil `Customer` creado
+automáticamente en la primera verificación OTP por el namespace customer;
+direcciones con un solo "default" garantizado (índice parcial + callback) y
+chequeo de cobertura informativo; carrito con un carrito activo por
+(cliente, sucursal), snapshot de precios/modificadores al agregar;
+`Pricing::GenerateQuote` calcula subtotal/impuesto/tarifa de envío/total
+enteramente en el backend (nunca confía en el cliente), es idempotente por
+`(customer_id, idempotency_key)`, y usa distancia real vía PostGIS
+`ST_Distance` (no aproximación en Ruby) para tarifas por kilómetro.
+`ExchangeRate` modelado con numerador/denominador racional (nunca float),
+aunque todavía sin uso real — las cotizaciones se cotizan en la moneda de
+la sucursal. Ver
+[`docs/architecture/decisions.md`](docs/architecture/decisions.md) para lo
+pendiente (tarifa de envío inventada, sin fee de servicio, sin conversión
+de moneda). 101 tests en total.
+
+Los dominios de negocio restantes (Orders, Payments, Dispatch, ...) se
+agregan en los incrementos siguientes.
