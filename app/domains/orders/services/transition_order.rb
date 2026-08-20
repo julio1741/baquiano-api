@@ -16,6 +16,10 @@ module Orders
   class TransitionOrder
     TRANSITIONS = {
       %w[placed merchant_pending] => { actor: :system, event_type: "OrderStatusChanged" },
+      # Driven by Payments::TransitionPaymentIntent#sync_order! once a
+      # mobile_payment order's payment is actually confirmed (Increment 6)
+      # — this was a dead end from Increment 4 until Payments existed.
+      %w[payment_pending placed] => { actor: :system, event_type: "PaymentConfirmed" },
       %w[payment_pending cancelled] => {
         actor: :customer, timestamp_column: :cancelled_at, event_type: "OrderCancelled"
       },
@@ -65,7 +69,15 @@ module Orders
       %w[courier_at_merchant delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
       %w[picked_up delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
       %w[en_route delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
-      %w[courier_at_customer delivery_failed] => { actor: :system, event_type: "DeliveryFailed" }
+      %w[courier_at_customer delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
+
+      # Driven by Payments::RequestRefund/DecideRefund (Increment 6).
+      %w[delivered refund_pending] => { actor: :system, event_type: "RefundRequested" },
+      %w[merchant_rejected refund_pending] => { actor: :system, event_type: "RefundRequested" },
+      %w[cancelled refund_pending] => { actor: :system, event_type: "RefundRequested" },
+      %w[refund_pending refunded] => { actor: :system, event_type: "RefundCompleted" },
+      %w[refund_pending partially_refunded] => { actor: :system, event_type: "RefundCompleted" },
+      %w[partially_refunded refunded] => { actor: :system, event_type: "RefundCompleted" }
     }.freeze
 
     def self.call(...) = new(...).call

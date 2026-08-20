@@ -42,6 +42,8 @@ Rails.application.routes.draw do
         end
         resources :orders, only: %i[index show] do
           post "cancellation_request", to: "orders#request_cancellation", on: :member
+          resources :mobile_payment_submissions, only: [ :create ]
+          resources :refunds, only: [ :create ]
         end
       end
 
@@ -73,8 +75,14 @@ Rails.application.routes.draw do
             post :arrive_at_customer
             post :confirm_delivery
             post :fail_delivery
+            post :collect_cash_payment
+            post :record_pos_payment
           end
         end
+
+        resources :cash_balances, only: [ :index ]
+        resources :cash_handovers, only: %i[index create]
+        resources :settlements, only: [ :index ]
       end
 
       namespace :merchant do
@@ -152,6 +160,34 @@ Rails.application.routes.draw do
         resources :deliveries, only: %i[index show] do
           post :assign, on: :member
         end
+
+        resources :mobile_payment_submissions, only: %i[index show] do
+          member do
+            post :approve
+            post :reject
+          end
+        end
+        resources :pos_payment_records, only: [ :index ]
+        resources :refunds, only: %i[index show] do
+          member do
+            post :approve
+            post :reject
+          end
+        end
+        resources :reconciliation_batches, only: %i[index show create] do
+          post :complete, on: :member
+          post "items/:item_id/resolve", to: "reconciliation_batches#resolve_item", on: :collection, as: :resolve_item
+        end
+        resources :settlements, only: %i[index show create] do
+          member do
+            post :approve
+            post :mark_paid
+          end
+        end
+        resources :cash_handovers, only: [ :index ] do
+          post :confirm, on: :member
+        end
+        resources :cash_balances, only: %i[index update]
       end
     end
   end

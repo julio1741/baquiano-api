@@ -44,7 +44,7 @@ module Api
 
         def merchant_params
           params.permit(:organization_id, :slug, :description, :vertical, :status,
-                        :accepts_baquiano_couriers, :accepts_own_couriers)
+                        :accepts_baquiano_couriers, :accepts_own_couriers, :commission_rate_basis_points)
         end
 
         def merchant_body(merchant)
@@ -56,7 +56,8 @@ module Api
             vertical: merchant.vertical,
             status: merchant.status,
             accepts_baquiano_couriers: merchant.accepts_baquiano_couriers,
-            accepts_own_couriers: merchant.accepts_own_couriers
+            accepts_own_couriers: merchant.accepts_own_couriers,
+            commission_rate_basis_points: merchant.commission_rate_basis_points
           }
         end
       end

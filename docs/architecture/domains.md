@@ -54,7 +54,10 @@ controllers, only through associations (`current_user.customer`,
 code that does `Customer.find(...)` or similar from in there. Confirmed a
 third time for `Courier` (Increment 5) — `Api::V1::Courier::CouriersController`
 and `Api::V1::Admin::CouriersController` both spell it `::Courier`
-throughout.
+throughout. Actually hit the "any `Api::V1::*` controller" case in
+Increment 6: `Api::V1::Admin::SettlementsController` (not itself under
+`Api::V1::Merchant` or `Api::V1::Courier`) needed `::Merchant`/`::Courier`
+in a `beneficiary_type` lookup hash — see docs/architecture/decisions.md.
 
 Domains are added incrementally, one per implementation increment (section 14
 of the master prompt) — folders are only created once they hold real code, to
@@ -67,7 +70,7 @@ avoid empty scaffolding:
 | 3 | Customers, Carts, Pricing |
 | 4 | Orders, Events |
 | 5 | Couriers, Dispatch, Deliveries, Geography |
-| 6 | Payments, Accounting, Reconciliation |
+| 6 | Payments, Ledger, Reconciliation, Settlements, Cash |
 | 7 | Notifications, Support, Risk, Audit, Configuration |
 
 `Events` (transactional outbox: `DomainEvent`/`OutboxEvent`,

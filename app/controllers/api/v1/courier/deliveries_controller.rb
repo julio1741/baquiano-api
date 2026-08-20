@@ -37,6 +37,23 @@ module Api
           render json: delivery_body(transition(to_status: "failed", failure_reason: params[:failure_reason]))
         end
 
+        def collect_cash_payment
+          delivery = current_courier.deliveries.find(params[:id])
+          payment_intent = delivery.order.payment_intent
+          Cash::CollectCashPayment.call(payment_intent: payment_intent, courier: current_courier)
+          render json: { payment_intent_status: payment_intent.reload.status }
+        end
+
+        def record_pos_payment
+          delivery = current_courier.deliveries.find(params[:id])
+          payment_intent = delivery.order.payment_intent
+          Payments::RecordPosPayment.call(
+            payment_intent: payment_intent, confirmed_by: current_user, terminal_owner: current_courier,
+            receipt_reference: params[:receipt_reference]
+          )
+          render json: { payment_intent_status: payment_intent.reload.status }
+        end
+
         private
 
         def transition(to_status:, pin: nil, failure_reason: nil)

@@ -36,7 +36,8 @@ module Deliveries
         actor: :courier, timestamp_column: :arrived_at_customer_at, event_type: "CourierArrivedAtCustomer"
       },
       %w[at_customer delivered] => {
-        actor: :courier, timestamp_column: :delivered_at, requires_pin: true, event_type: "OrderDelivered"
+        actor: :courier, timestamp_column: :delivered_at, requires_pin: true, requires_captured_payment: true,
+        event_type: "OrderDelivered"
       },
       %w[pending_assignment cancelled] => { actor: :system, event_type: "DeliveryFailed" },
       %w[offered cancelled] => { actor: :system, event_type: "DeliveryFailed" },
@@ -89,6 +90,10 @@ module Deliveries
 
         if rule[:requires_pin] && !@delivery.matches_pin?(@pin)
           raise ValidationError.new("PIN does not match", code: "delivery_pin_mismatch")
+        end
+
+        if rule[:requires_captured_payment] && !@delivery.order.payment_intent&.status_captured?
+          raise ConflictError.new("payment for this order hasn't been captured yet", code: "payment_not_captured")
         end
 
         from_status = @delivery.status

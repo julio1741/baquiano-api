@@ -1,6 +1,7 @@
 class Merchant < ApplicationRecord
   belongs_to :organization
   has_many :branches, dependent: :restrict_with_error
+  has_many :settlements, as: :beneficiary, dependent: :restrict_with_error
 
   enum :vertical, { restaurant: "restaurant", grocery: "grocery", pharmacy: "pharmacy" }, validate: true
   enum :status, { pending: "pending", active: "active", suspended: "suspended" }, validate: true

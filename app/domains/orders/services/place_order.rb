@@ -4,11 +4,10 @@ module Orders
   # recalcular pedidos históricos"). Idempotent per (customer, idempotency_key).
   #
   # payment_method decides where the order starts: mobile_payment needs
-  # confirmation before the merchant ever sees it (payment_pending) — but
-  # there's no way to move it forward yet, since Payments doesn't exist
-  # until Increment 6 (see docs/architecture/decisions.md). cash/
-  # pos_on_delivery skip straight past the payment states since nothing is
-  # collected until delivery.
+  # confirmation before the merchant ever sees it (payment_pending) —
+  # Payments::TransitionPaymentIntent#sync_order! is what actually advances
+  # it once that payment is confirmed. cash/pos_on_delivery skip straight
+  # past the payment states since nothing is collected until delivery.
   class PlaceOrder
     PAYMENT_METHODS = %w[mobile_payment pos_on_delivery cash].freeze
     UPFRONT_CONFIRMATION_METHODS = %w[mobile_payment].freeze
@@ -40,6 +39,7 @@ module Orders
         @quote.cart.update!(status: "converted")
 
         Events::Publish.call(aggregate: order, event_type: "OrderPlaced", payload: { order_id: order.id })
+        Payments::CreatePaymentIntent.call(order: order)
 
         if order.current_status == "placed"
           Orders::TransitionOrder.call(order: order, to_status: "merchant_pending", actor_type: "system")
@@ -64,6 +64,7 @@ module Orders
         quote: @quote,
         current_status: initial_status,
         payment_status: initial_payment_status,
+        payment_method: @payment_method,
         fulfillment_type: "delivery",
         delivery_model: branch.delivery_model,
         currency: @quote.currency,

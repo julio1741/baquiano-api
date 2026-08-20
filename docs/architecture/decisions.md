@@ -276,3 +276,100 @@ exists — pings are stored indefinitely at full precision via
 window and whether/how to degrade precision before this goes near
 production, especially given this is exactly the kind of personal location
 data that data-protection rules tend to care about.
+
+## No real payment gateway — Payments is a manual-review record-keeper
+
+Per section 16's explicit rules ("no inventar integraciones bancarias",
+"no asumir acceso automático a Pago Móvil", "no confirmar pagos mediante
+una imagen"), `Payments::SubmitMobilePayment`/`ReviewMobilePayment` and
+`Payments::RecordPosPayment` never talk to a real bank/processor —
+`provider` is always `"manual"`, and every confirmation is a human
+decision (a staff member reviewing a claimed Pago Móvil reference, or a
+courier/staff member physically present at a POS swipe). This is
+deliberate scope, not a placeholder to fill in later within this MVP.
+
+## Two real bugs found by a live end-to-end walkthrough (Increment 6)
+
+Same practice as Increments 4 and 5 — a full manual walkthrough (real OTP
+logins, mobile-payment order → submission → admin review → delivery →
+refund → settlement, plus a cash order hitting its courier's exposure
+limit) surfaced defects the automated suite's factories had papered over:
+
+1. **`Merchant.commission_rate_basis_points` had no admin API path to set
+   it at all** — the column existed and `Ledger::RecordOrderSettlementEntries`/
+   `Settlements::Create` both read it, but every merchant's effective rate
+   was silently `nil` → 0% forever, with no error raised anywhere (a
+   wrong-answer bug, not a crash — the same "silently wrong" shape flagged
+   below for the `case/when` collision risk). Fixed by adding it to
+   `Api::V1::Admin::MerchantsController`'s permitted params.
+2. **A courier could mark a cash/pos_on_delivery order "delivered" without
+   ever successfully collecting payment** — e.g. after their own cash
+   exposure limit blocked the collection — since `Deliveries::TransitionDelivery`'s
+   `at_customer → delivered` rule only ever checked the PIN, never payment
+   state. Fixed by adding a `requires_captured_payment` rule flag that
+   checks `order.payment_intent.status_captured?` before allowing
+   delivery completion; mobile_payment orders are unaffected since their
+   payment is already captured long before delivery starts.
+
+## `Api::V1::<role>` namespace collision bit an Admin controller, not just same-named ones
+
+`docs/architecture/domains.md`'s "gotcha" entry already documented this
+correctly (it says the trap applies from *any* `Api::V1::*` controller,
+not just a role's own namespace) — the lapse here was in applying that
+rule while writing new code, not a gap in the documentation. Worth a
+reminder anyway: since `Merchant`/`Customer`/`Courier`'s colliding
+routing-namespace modules are direct children of `Api::V1`, a bare
+reference from `Api::V1::Admin::SettlementsController` — nowhere near
+`Api::V1::Merchant` or `Api::V1::Courier` lexically — still resolves to
+the wrong sibling module, because Ruby's constant lookup walks every
+enclosing lexical scope, not just the innermost one. Caught when
+`{ "merchant" => Merchant, "courier" => Courier }` in the new admin
+settlements controller raised `NoMethodError: undefined method 'find' for
+module Api::V1::Merchant`. Fixed there (`::Merchant`/`::Courier`) and
+audited every other `app/controllers/api/v1/**/*.rb` file — no other bare
+references existed. Also defensively `::`-prefixed three files outside
+`api/v1` that reference `Merchant`/`Courier`/`Customer` in a `case/when`
+(`Settlements::Create`, `Settlements::MarkPaid`, `SettlementPolicy`,
+`Customers::EnsureProfile`) — safe today since no colliding module exists
+in *their* lexical chain, but a `case/when` misresolution fails silently
+(the branch just never matches) rather than raising, which is harder to
+notice than a crash.
+
+## Settlement gross/commission is computed independently of the ledger and of later refunds
+
+`Settlements::Create` computes `gross_amount`/`commission_amount` by
+summing `Order` fields directly (subtotal/tax/discount, or delivery_fee
+for couriers) over the period — not from `LedgerAccount` running balances.
+This keeps a settlement easy to audit ("exactly these N orders"), but it
+means a refund issued *after* an order's settlement period closes isn't
+netted out of that merchant's next settlement automatically — refund
+accounting only ever touches the ledger's `merchant:*:payable` balance
+(itself a simplification, see below), never a `Settlement` record. A
+merchant could be paid out gross for an order that's later fully refunded.
+Needs a real reconciliation step between refunds and settlements before
+this is production-safe.
+
+## Refund ledger entries are simplified, and the delivery-fee pool has no per-courier ledger trail
+
+Two related simplifications from Increment 6 worth keeping together:
+`Ledger::RecordRefundEntries` reverses a refund's full amount against the
+merchant's own payable rather than proportionally unwinding it across the
+original subtotal/tax/delivery_fee/commission split (see the class comment
+for the reasoning). Separately, `platform:delivery_fee_payable` is one
+shared liability account for *every* courier's pooled delivery-fee
+earnings — `Settlements::Create`/`MarkPaid` compute and pay out a specific
+courier's share correctly from `Order`/`Delivery` data, but the ledger
+account itself has no per-courier subdivision, so nothing there would
+catch the pool ever going net-negative from over-paying couriers relative
+to what was actually collected. Both are acceptable for an MVP's
+audit-lite bookkeeping but not for real accounting close.
+
+## Payment intent expiry window and cash exposure blocking are unvalidated constants
+
+`Payments::CreatePaymentIntent::MOBILE_PAYMENT_WINDOW` (30 minutes) and
+the whole `cash_balances.blocked_for_cash_orders` flag (settable by an
+admin via `Api::V1::Admin::CashBalancesController`, but nothing ever sets
+it automatically) are placeholders — no product/risk decision has picked
+a real submission window, and there's no automated trigger (repeated cash
+shortfalls, fraud signals) that would ever flip `blocked_for_cash_orders`
+on its own. That's Risk domain territory (Increment 7).

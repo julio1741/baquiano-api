@@ -175,6 +175,47 @@ CREATE TABLE public.carts (
 
 
 --
+-- Name: cash_balances; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cash_balances (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    courier_id uuid NOT NULL,
+    currency character varying NOT NULL,
+    amount_held bigint DEFAULT 0 NOT NULL,
+    exposure_limit bigint NOT NULL,
+    blocked_for_cash_orders boolean DEFAULT false NOT NULL,
+    calculated_at timestamp with time zone NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT cash_balances_amount_held_non_negative CHECK ((amount_held >= 0))
+);
+
+
+--
+-- Name: cash_handovers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cash_handovers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    courier_id uuid NOT NULL,
+    received_by_user_id uuid NOT NULL,
+    amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    evidence_attachment_reference character varying,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    idempotency_key character varying NOT NULL,
+    handed_over_at timestamp with time zone NOT NULL,
+    confirmed_at timestamp with time zone,
+    notes text,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT cash_handovers_amount_positive CHECK ((amount > 0))
+);
+
+
+--
 -- Name: catalogs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -513,6 +554,60 @@ CREATE TABLE public.inventory_items (
 
 
 --
+-- Name: ledger_accounts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ledger_accounts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    organization_id uuid,
+    owner_type character varying,
+    owner_id uuid,
+    account_code character varying NOT NULL,
+    account_type character varying NOT NULL,
+    currency character varying NOT NULL,
+    status character varying DEFAULT 'active'::character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: ledger_entries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ledger_entries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    ledger_transaction_id uuid NOT NULL,
+    ledger_account_id uuid NOT NULL,
+    direction character varying NOT NULL,
+    amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT ledger_entries_amount_positive CHECK ((amount > 0))
+);
+
+
+--
+-- Name: ledger_transactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ledger_transactions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    transaction_type character varying NOT NULL,
+    reference_type character varying NOT NULL,
+    reference_id uuid NOT NULL,
+    description character varying,
+    idempotency_key character varying NOT NULL,
+    effective_at timestamp with time zone NOT NULL,
+    posted_at timestamp with time zone NOT NULL,
+    reversal_of_transaction_id uuid,
+    created_by_user_id uuid,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: location_pings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -556,6 +651,35 @@ CREATE TABLE public.merchants (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     CONSTRAINT merchants_commission_rate_basis_points_range CHECK (((commission_rate_basis_points IS NULL) OR ((commission_rate_basis_points >= 0) AND (commission_rate_basis_points <= 10000))))
+);
+
+
+--
+-- Name: mobile_payment_submissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mobile_payment_submissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    payment_intent_id uuid NOT NULL,
+    origin_bank_code character varying,
+    destination_bank_code character varying,
+    reference character varying NOT NULL,
+    reference_digest character varying NOT NULL,
+    payer_document_masked character varying,
+    payer_phone_masked character varying,
+    amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    paid_at timestamp with time zone NOT NULL,
+    evidence_attachment_reference character varying,
+    review_status character varying DEFAULT 'submitted'::character varying NOT NULL,
+    reviewed_by_user_id uuid,
+    reviewed_at timestamp with time zone,
+    rejection_reason character varying,
+    duplicate_of_submission_id uuid,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT mobile_payment_submissions_amount_non_negative CHECK ((amount >= 0))
 );
 
 
@@ -725,6 +849,7 @@ CREATE TABLE public.orders (
     lock_version integer DEFAULT 0 NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
+    payment_method character varying,
     CONSTRAINT orders_subtotal_amount_non_negative CHECK ((subtotal_amount >= 0)),
     CONSTRAINT orders_total_amount_non_negative CHECK ((total_amount >= 0))
 );
@@ -798,6 +923,56 @@ CREATE TABLE public.outbox_events (
 
 
 --
+-- Name: payment_intents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.payment_intents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    order_id uuid NOT NULL,
+    customer_id uuid NOT NULL,
+    provider character varying DEFAULT 'manual'::character varying NOT NULL,
+    payment_method character varying NOT NULL,
+    status character varying DEFAULT 'created'::character varying NOT NULL,
+    amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    provider_reference character varying,
+    idempotency_key character varying NOT NULL,
+    expires_at timestamp with time zone,
+    authorized_at timestamp with time zone,
+    captured_at timestamp with time zone,
+    failed_at timestamp with time zone,
+    failure_code character varying,
+    failure_message character varying,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT payment_intents_amount_non_negative CHECK ((amount >= 0))
+);
+
+
+--
+-- Name: payment_transactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.payment_transactions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    payment_intent_id uuid NOT NULL,
+    transaction_type character varying NOT NULL,
+    status character varying NOT NULL,
+    amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    provider_transaction_id character varying,
+    idempotency_key character varying NOT NULL,
+    raw_response_encrypted text,
+    occurred_at timestamp with time zone NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT payment_transactions_amount_non_negative CHECK ((amount >= 0))
+);
+
+
+--
 -- Name: permissions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -810,6 +985,30 @@ CREATE TABLE public.permissions (
     sensitive boolean DEFAULT false NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: pos_payment_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pos_payment_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    payment_intent_id uuid NOT NULL,
+    terminal_owner_type character varying,
+    terminal_owner_id uuid,
+    terminal_identifier_encrypted text,
+    acquiring_account_reference_encrypted text,
+    receipt_reference character varying,
+    amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    status character varying DEFAULT 'confirmed'::character varying NOT NULL,
+    confirmed_by_user_id uuid NOT NULL,
+    confirmed_at timestamp with time zone NOT NULL,
+    evidence_attachment_reference character varying,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT pos_payment_records_amount_non_negative CHECK ((amount >= 0))
 );
 
 
@@ -888,6 +1087,83 @@ CREATE TABLE public.quotes (
     updated_at timestamp(6) with time zone NOT NULL,
     CONSTRAINT quotes_subtotal_amount_non_negative CHECK ((subtotal_amount >= 0)),
     CONSTRAINT quotes_total_amount_non_negative CHECK ((total_amount >= 0))
+);
+
+
+--
+-- Name: reconciliation_batches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reconciliation_batches (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    provider character varying NOT NULL,
+    payment_method character varying NOT NULL,
+    currency character varying NOT NULL,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    expected_amount bigint DEFAULT 0 NOT NULL,
+    actual_amount bigint DEFAULT 0 NOT NULL,
+    difference_amount bigint DEFAULT 0 NOT NULL,
+    started_by_user_id uuid NOT NULL,
+    completed_by_user_id uuid,
+    started_at timestamp with time zone NOT NULL,
+    completed_at timestamp with time zone,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: reconciliation_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reconciliation_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    reconciliation_batch_id uuid NOT NULL,
+    payment_transaction_id uuid,
+    external_reference character varying,
+    expected_amount bigint NOT NULL,
+    actual_amount bigint NOT NULL,
+    difference_amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    resolution_code character varying,
+    resolution_notes text,
+    resolved_by_user_id uuid,
+    resolved_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: refunds; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.refunds (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    order_id uuid NOT NULL,
+    payment_intent_id uuid NOT NULL,
+    requested_by_user_id uuid NOT NULL,
+    approved_by_user_id uuid,
+    status character varying DEFAULT 'requested'::character varying NOT NULL,
+    reason_code character varying NOT NULL,
+    reason_notes text,
+    amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    idempotency_key character varying NOT NULL,
+    provider_reference character varying,
+    requested_at timestamp with time zone NOT NULL,
+    approved_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    failed_at timestamp with time zone,
+    failure_code character varying,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT refunds_amount_positive CHECK ((amount > 0))
 );
 
 
@@ -984,6 +1260,32 @@ CREATE TABLE public.sessions (
     revoked_at timestamp with time zone,
     rotated_from_session_id uuid,
     last_used_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: settlements; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.settlements (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    beneficiary_type character varying NOT NULL,
+    beneficiary_id uuid NOT NULL,
+    period_start date NOT NULL,
+    period_end date NOT NULL,
+    currency character varying NOT NULL,
+    gross_amount bigint NOT NULL,
+    commission_amount bigint DEFAULT 0 NOT NULL,
+    adjustment_amount bigint DEFAULT 0 NOT NULL,
+    net_amount bigint NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    approved_by_user_id uuid,
+    paid_at timestamp with time zone,
+    payment_reference_encrypted text,
+    idempotency_key character varying NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL
 );
@@ -1164,6 +1466,22 @@ ALTER TABLE ONLY public.carts
 
 
 --
+-- Name: cash_balances cash_balances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_balances
+    ADD CONSTRAINT cash_balances_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cash_handovers cash_handovers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_handovers
+    ADD CONSTRAINT cash_handovers_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: catalogs catalogs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1292,6 +1610,30 @@ ALTER TABLE ONLY public.inventory_items
 
 
 --
+-- Name: ledger_accounts ledger_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_accounts
+    ADD CONSTRAINT ledger_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ledger_entries ledger_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT ledger_entries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ledger_transactions ledger_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_transactions
+    ADD CONSTRAINT ledger_transactions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: location_pings location_pings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1305,6 +1647,14 @@ ALTER TABLE ONLY public.location_pings
 
 ALTER TABLE ONLY public.merchants
     ADD CONSTRAINT merchants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: mobile_payment_submissions mobile_payment_submissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mobile_payment_submissions
+    ADD CONSTRAINT mobile_payment_submissions_pkey PRIMARY KEY (id);
 
 
 --
@@ -1388,11 +1738,35 @@ ALTER TABLE ONLY public.outbox_events
 
 
 --
+-- Name: payment_intents payment_intents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payment_intents
+    ADD CONSTRAINT payment_intents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: payment_transactions payment_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payment_transactions
+    ADD CONSTRAINT payment_transactions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.permissions
     ADD CONSTRAINT permissions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pos_payment_records pos_payment_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pos_payment_records
+    ADD CONSTRAINT pos_payment_records_pkey PRIMARY KEY (id);
 
 
 --
@@ -1417,6 +1791,30 @@ ALTER TABLE ONLY public.products
 
 ALTER TABLE ONLY public.quotes
     ADD CONSTRAINT quotes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reconciliation_batches reconciliation_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reconciliation_batches
+    ADD CONSTRAINT reconciliation_batches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: reconciliation_items reconciliation_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reconciliation_items
+    ADD CONSTRAINT reconciliation_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: refunds refunds_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refunds
+    ADD CONSTRAINT refunds_pkey PRIMARY KEY (id);
 
 
 --
@@ -1465,6 +1863,14 @@ ALTER TABLE ONLY public.service_areas
 
 ALTER TABLE ONLY public.sessions
     ADD CONSTRAINT sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: settlements settlements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settlements
+    ADD CONSTRAINT settlements_pkey PRIMARY KEY (id);
 
 
 --
@@ -1523,10 +1929,24 @@ CREATE UNIQUE INDEX idx_on_order_id_idempotency_key_d8d7489422 ON public.order_t
 
 
 --
+-- Name: idx_on_payment_intent_id_idempotency_key_675383ac2e; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_payment_intent_id_idempotency_key_675383ac2e ON public.payment_transactions USING btree (payment_intent_id, idempotency_key);
+
+
+--
 -- Name: idx_on_phone_digest_purpose_created_at_11442c137d; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_on_phone_digest_purpose_created_at_11442c137d ON public.otp_challenges USING btree (phone_digest, purpose, created_at);
+
+
+--
+-- Name: idx_on_terminal_owner_type_terminal_owner_id_62ec5701bd; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_on_terminal_owner_type_terminal_owner_id_62ec5701bd ON public.pos_payment_records USING btree (terminal_owner_type, terminal_owner_id);
 
 
 --
@@ -1660,6 +2080,48 @@ CREATE INDEX index_carts_on_customer_id ON public.carts USING btree (customer_id
 --
 
 CREATE UNIQUE INDEX index_carts_one_active_per_customer_and_branch ON public.carts USING btree (customer_id, branch_id) WHERE ((status)::text = 'active'::text);
+
+
+--
+-- Name: index_cash_balances_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cash_balances_on_courier_id ON public.cash_balances USING btree (courier_id);
+
+
+--
+-- Name: index_cash_balances_on_courier_id_and_currency; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cash_balances_on_courier_id_and_currency ON public.cash_balances USING btree (courier_id, currency);
+
+
+--
+-- Name: index_cash_handovers_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cash_handovers_on_courier_id ON public.cash_handovers USING btree (courier_id);
+
+
+--
+-- Name: index_cash_handovers_on_courier_id_and_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_cash_handovers_on_courier_id_and_idempotency_key ON public.cash_handovers USING btree (courier_id, idempotency_key);
+
+
+--
+-- Name: index_cash_handovers_on_received_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cash_handovers_on_received_by_user_id ON public.cash_handovers USING btree (received_by_user_id);
+
+
+--
+-- Name: index_cash_handovers_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_cash_handovers_on_status ON public.cash_handovers USING btree (status);
 
 
 --
@@ -2013,6 +2475,76 @@ CREATE INDEX index_inventory_items_on_updated_by_user_id ON public.inventory_ite
 
 
 --
+-- Name: index_ledger_accounts_on_account_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_ledger_accounts_on_account_code ON public.ledger_accounts USING btree (account_code);
+
+
+--
+-- Name: index_ledger_accounts_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_accounts_on_organization_id ON public.ledger_accounts USING btree (organization_id);
+
+
+--
+-- Name: index_ledger_accounts_on_owner_type_and_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_accounts_on_owner_type_and_owner_id ON public.ledger_accounts USING btree (owner_type, owner_id);
+
+
+--
+-- Name: index_ledger_entries_on_direction; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_entries_on_direction ON public.ledger_entries USING btree (direction);
+
+
+--
+-- Name: index_ledger_entries_on_ledger_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_entries_on_ledger_account_id ON public.ledger_entries USING btree (ledger_account_id);
+
+
+--
+-- Name: index_ledger_entries_on_ledger_transaction_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_entries_on_ledger_transaction_id ON public.ledger_entries USING btree (ledger_transaction_id);
+
+
+--
+-- Name: index_ledger_transactions_on_created_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_transactions_on_created_by_user_id ON public.ledger_transactions USING btree (created_by_user_id);
+
+
+--
+-- Name: index_ledger_transactions_on_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_ledger_transactions_on_idempotency_key ON public.ledger_transactions USING btree (idempotency_key);
+
+
+--
+-- Name: index_ledger_transactions_on_reference_type_and_reference_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_transactions_on_reference_type_and_reference_id ON public.ledger_transactions USING btree (reference_type, reference_id);
+
+
+--
+-- Name: index_ledger_transactions_on_reversal_of_transaction_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_ledger_transactions_on_reversal_of_transaction_id ON public.ledger_transactions USING btree (reversal_of_transaction_id);
+
+
+--
 -- Name: index_location_pings_on_courier_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2059,6 +2591,41 @@ CREATE UNIQUE INDEX index_merchants_on_slug ON public.merchants USING btree (slu
 --
 
 CREATE INDEX index_merchants_on_vertical ON public.merchants USING btree (vertical);
+
+
+--
+-- Name: index_mobile_payment_submissions_on_duplicate_of_submission_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_mobile_payment_submissions_on_duplicate_of_submission_id ON public.mobile_payment_submissions USING btree (duplicate_of_submission_id);
+
+
+--
+-- Name: index_mobile_payment_submissions_on_payment_intent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_mobile_payment_submissions_on_payment_intent_id ON public.mobile_payment_submissions USING btree (payment_intent_id);
+
+
+--
+-- Name: index_mobile_payment_submissions_on_reference_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_mobile_payment_submissions_on_reference_digest ON public.mobile_payment_submissions USING btree (reference_digest);
+
+
+--
+-- Name: index_mobile_payment_submissions_on_review_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_mobile_payment_submissions_on_review_status ON public.mobile_payment_submissions USING btree (review_status);
+
+
+--
+-- Name: index_mobile_payment_submissions_on_reviewed_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_mobile_payment_submissions_on_reviewed_by_user_id ON public.mobile_payment_submissions USING btree (reviewed_by_user_id);
 
 
 --
@@ -2251,6 +2818,48 @@ CREATE INDEX index_outbox_events_on_status_and_available_at ON public.outbox_eve
 
 
 --
+-- Name: index_payment_intents_on_customer_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_payment_intents_on_customer_id ON public.payment_intents USING btree (customer_id);
+
+
+--
+-- Name: index_payment_intents_on_customer_id_and_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_payment_intents_on_customer_id_and_idempotency_key ON public.payment_intents USING btree (customer_id, idempotency_key);
+
+
+--
+-- Name: index_payment_intents_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_payment_intents_on_order_id ON public.payment_intents USING btree (order_id);
+
+
+--
+-- Name: index_payment_intents_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_payment_intents_on_status ON public.payment_intents USING btree (status);
+
+
+--
+-- Name: index_payment_transactions_on_payment_intent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_payment_transactions_on_payment_intent_id ON public.payment_transactions USING btree (payment_intent_id);
+
+
+--
+-- Name: index_payment_transactions_on_provider_transaction_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_payment_transactions_on_provider_transaction_id ON public.payment_transactions USING btree (provider_transaction_id) WHERE (provider_transaction_id IS NOT NULL);
+
+
+--
 -- Name: index_permissions_on_code; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2262,6 +2871,20 @@ CREATE UNIQUE INDEX index_permissions_on_code ON public.permissions USING btree 
 --
 
 CREATE UNIQUE INDEX index_permissions_on_resource_and_action ON public.permissions USING btree (resource, action);
+
+
+--
+-- Name: index_pos_payment_records_on_confirmed_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_pos_payment_records_on_confirmed_by_user_id ON public.pos_payment_records USING btree (confirmed_by_user_id);
+
+
+--
+-- Name: index_pos_payment_records_on_payment_intent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_pos_payment_records_on_payment_intent_id ON public.pos_payment_records USING btree (payment_intent_id);
 
 
 --
@@ -2346,6 +2969,97 @@ CREATE UNIQUE INDEX index_quotes_on_customer_id_and_idempotency_key ON public.qu
 --
 
 CREATE INDEX index_quotes_on_exchange_rate_id ON public.quotes USING btree (exchange_rate_id);
+
+
+--
+-- Name: index_reconciliation_batches_on_completed_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reconciliation_batches_on_completed_by_user_id ON public.reconciliation_batches USING btree (completed_by_user_id);
+
+
+--
+-- Name: index_reconciliation_batches_on_started_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reconciliation_batches_on_started_by_user_id ON public.reconciliation_batches USING btree (started_by_user_id);
+
+
+--
+-- Name: index_reconciliation_batches_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reconciliation_batches_on_status ON public.reconciliation_batches USING btree (status);
+
+
+--
+-- Name: index_reconciliation_items_on_payment_transaction_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reconciliation_items_on_payment_transaction_id ON public.reconciliation_items USING btree (payment_transaction_id);
+
+
+--
+-- Name: index_reconciliation_items_on_reconciliation_batch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reconciliation_items_on_reconciliation_batch_id ON public.reconciliation_items USING btree (reconciliation_batch_id);
+
+
+--
+-- Name: index_reconciliation_items_on_resolved_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reconciliation_items_on_resolved_by_user_id ON public.reconciliation_items USING btree (resolved_by_user_id);
+
+
+--
+-- Name: index_reconciliation_items_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_reconciliation_items_on_status ON public.reconciliation_items USING btree (status);
+
+
+--
+-- Name: index_refunds_on_approved_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_refunds_on_approved_by_user_id ON public.refunds USING btree (approved_by_user_id);
+
+
+--
+-- Name: index_refunds_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_refunds_on_order_id ON public.refunds USING btree (order_id);
+
+
+--
+-- Name: index_refunds_on_order_id_and_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_refunds_on_order_id_and_idempotency_key ON public.refunds USING btree (order_id, idempotency_key);
+
+
+--
+-- Name: index_refunds_on_payment_intent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_refunds_on_payment_intent_id ON public.refunds USING btree (payment_intent_id);
+
+
+--
+-- Name: index_refunds_on_requested_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_refunds_on_requested_by_user_id ON public.refunds USING btree (requested_by_user_id);
+
+
+--
+-- Name: index_refunds_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_refunds_on_status ON public.refunds USING btree (status);
 
 
 --
@@ -2482,6 +3196,34 @@ CREATE INDEX index_sessions_on_user_id ON public.sessions USING btree (user_id);
 
 
 --
+-- Name: index_settlements_on_approved_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_settlements_on_approved_by_user_id ON public.settlements USING btree (approved_by_user_id);
+
+
+--
+-- Name: index_settlements_on_beneficiary_type_and_beneficiary_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_settlements_on_beneficiary_type_and_beneficiary_id ON public.settlements USING btree (beneficiary_type, beneficiary_id);
+
+
+--
+-- Name: index_settlements_on_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_settlements_on_idempotency_key ON public.settlements USING btree (idempotency_key);
+
+
+--
+-- Name: index_settlements_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_settlements_on_status ON public.settlements USING btree (status);
+
+
+--
 -- Name: index_special_business_hours_on_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2581,6 +3323,14 @@ ALTER TABLE ONLY public.role_assignments
 
 
 --
+-- Name: ledger_accounts fk_rails_022c225858; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_accounts
+    ADD CONSTRAINT fk_rails_022c225858 FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
 -- Name: location_pings fk_rails_04930166aa; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2594,6 +3344,14 @@ ALTER TABLE ONLY public.location_pings
 
 ALTER TABLE ONLY public.deliveries
     ADD CONSTRAINT fk_rails_0557fe5297 FOREIGN KEY (branch_id) REFERENCES public.branches(id);
+
+
+--
+-- Name: refunds fk_rails_0585533fe2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refunds
+    ADD CONSTRAINT fk_rails_0585533fe2 FOREIGN KEY (order_id) REFERENCES public.orders(id);
 
 
 --
@@ -2613,6 +3371,14 @@ ALTER TABLE ONLY public.courier_branch_assignments
 
 
 --
+-- Name: refunds fk_rails_087b6e5c8b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refunds
+    ADD CONSTRAINT fk_rails_087b6e5c8b FOREIGN KEY (payment_intent_id) REFERENCES public.payment_intents(id);
+
+
+--
 -- Name: order_transition_requests fk_rails_09f3923684; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2626,6 +3392,14 @@ ALTER TABLE ONLY public.order_transition_requests
 
 ALTER TABLE ONLY public.inventory_items
     ADD CONSTRAINT fk_rails_0c6f012f57 FOREIGN KEY (updated_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: settlements fk_rails_0d1f255be8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.settlements
+    ADD CONSTRAINT fk_rails_0d1f255be8 FOREIGN KEY (approved_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -2669,11 +3443,27 @@ ALTER TABLE ONLY public.delivery_incidents
 
 
 --
+-- Name: mobile_payment_submissions fk_rails_21abc6fd89; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mobile_payment_submissions
+    ADD CONSTRAINT fk_rails_21abc6fd89 FOREIGN KEY (reviewed_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: catalogs fk_rails_2236035560; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.catalogs
     ADD CONSTRAINT fk_rails_2236035560 FOREIGN KEY (branch_id) REFERENCES public.branches(id);
+
+
+--
+-- Name: mobile_payment_submissions fk_rails_2693a882cc; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mobile_payment_submissions
+    ADD CONSTRAINT fk_rails_2693a882cc FOREIGN KEY (payment_intent_id) REFERENCES public.payment_intents(id);
 
 
 --
@@ -2749,6 +3539,14 @@ ALTER TABLE ONLY public.role_assignments
 
 
 --
+-- Name: cash_handovers fk_rails_38230da54f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_handovers
+    ADD CONSTRAINT fk_rails_38230da54f FOREIGN KEY (received_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: business_hours fk_rails_3ae99539d3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2813,6 +3611,14 @@ ALTER TABLE ONLY public.role_permissions
 
 
 --
+-- Name: reconciliation_items fk_rails_458941eb10; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reconciliation_items
+    ADD CONSTRAINT fk_rails_458941eb10 FOREIGN KEY (payment_transaction_id) REFERENCES public.payment_transactions(id);
+
+
+--
 -- Name: inventory_items fk_rails_48ddeb658c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2821,11 +3627,27 @@ ALTER TABLE ONLY public.inventory_items
 
 
 --
+-- Name: pos_payment_records fk_rails_491d151c8d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pos_payment_records
+    ADD CONSTRAINT fk_rails_491d151c8d FOREIGN KEY (payment_intent_id) REFERENCES public.payment_intents(id);
+
+
+--
 -- Name: courier_documents fk_rails_4a7131aafb; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.courier_documents
     ADD CONSTRAINT fk_rails_4a7131aafb FOREIGN KEY (reviewed_by_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: cash_balances fk_rails_4b52916f22; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_balances
+    ADD CONSTRAINT fk_rails_4b52916f22 FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
 
 
 --
@@ -2842,6 +3664,14 @@ ALTER TABLE ONLY public.carts
 
 ALTER TABLE ONLY public.products
     ADD CONSTRAINT fk_rails_4b89e3ebbb FOREIGN KEY (catalog_id) REFERENCES public.catalogs(id);
+
+
+--
+-- Name: ledger_transactions fk_rails_4d3874d077; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_transactions
+    ADD CONSTRAINT fk_rails_4d3874d077 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -2882,6 +3712,14 @@ ALTER TABLE ONLY public.deliveries
 
 ALTER TABLE ONLY public.quotes
     ADD CONSTRAINT fk_rails_5e1368862f FOREIGN KEY (branch_id) REFERENCES public.branches(id);
+
+
+--
+-- Name: payment_transactions fk_rails_5e2a55fe92; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payment_transactions
+    ADD CONSTRAINT fk_rails_5e2a55fe92 FOREIGN KEY (payment_intent_id) REFERENCES public.payment_intents(id);
 
 
 --
@@ -2930,6 +3768,14 @@ ALTER TABLE ONLY public.cart_items
 
 ALTER TABLE ONLY public.user_identities
     ADD CONSTRAINT fk_rails_684b0e1ce0 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: reconciliation_items fk_rails_6b062f7ff5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reconciliation_items
+    ADD CONSTRAINT fk_rails_6b062f7ff5 FOREIGN KEY (resolved_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -3045,6 +3891,30 @@ ALTER TABLE ONLY public.quotes
 
 
 --
+-- Name: ledger_entries fk_rails_942ef43aa4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT fk_rails_942ef43aa4 FOREIGN KEY (ledger_account_id) REFERENCES public.ledger_accounts(id);
+
+
+--
+-- Name: reconciliation_batches fk_rails_946dfc13c4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reconciliation_batches
+    ADD CONSTRAINT fk_rails_946dfc13c4 FOREIGN KEY (completed_by_user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: payment_intents fk_rails_98ae66af3b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payment_intents
+    ADD CONSTRAINT fk_rails_98ae66af3b FOREIGN KEY (customer_id) REFERENCES public.customers(id);
+
+
+--
 -- Name: customers fk_rails_9917eeaf5d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3066,6 +3936,14 @@ ALTER TABLE ONLY public.quotes
 
 ALTER TABLE ONLY public.tax_rules
     ADD CONSTRAINT fk_rails_a97c34740b FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: reconciliation_batches fk_rails_aa32ac0422; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reconciliation_batches
+    ADD CONSTRAINT fk_rails_aa32ac0422 FOREIGN KEY (started_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -3093,6 +3971,14 @@ ALTER TABLE ONLY public.sessions
 
 
 --
+-- Name: payment_intents fk_rails_af0a9a0944; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.payment_intents
+    ADD CONSTRAINT fk_rails_af0a9a0944 FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+
+--
 -- Name: courier_availabilities fk_rails_af90fc3ab2; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3106,6 +3992,14 @@ ALTER TABLE ONLY public.courier_availabilities
 
 ALTER TABLE ONLY public.service_areas
     ADD CONSTRAINT fk_rails_b351f1b628 FOREIGN KEY (delivery_fee_rule_id) REFERENCES public.delivery_fee_rules(id) ON DELETE SET NULL;
+
+
+--
+-- Name: reconciliation_items fk_rails_b5d1a09b1a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reconciliation_items
+    ADD CONSTRAINT fk_rails_b5d1a09b1a FOREIGN KEY (reconciliation_batch_id) REFERENCES public.reconciliation_batches(id);
 
 
 --
@@ -3133,6 +4027,14 @@ ALTER TABLE ONLY public.order_items
 
 
 --
+-- Name: refunds fk_rails_bcf31193a5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refunds
+    ADD CONSTRAINT fk_rails_bcf31193a5 FOREIGN KEY (requested_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: order_item_modifiers fk_rails_c123920f0e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3149,6 +4051,14 @@ ALTER TABLE ONLY public.zones
 
 
 --
+-- Name: mobile_payment_submissions fk_rails_c3facd7653; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mobile_payment_submissions
+    ADD CONSTRAINT fk_rails_c3facd7653 FOREIGN KEY (duplicate_of_submission_id) REFERENCES public.mobile_payment_submissions(id);
+
+
+--
 -- Name: branches fk_rails_c975a54cff; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3162,6 +4072,22 @@ ALTER TABLE ONLY public.branches
 
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT fk_rails_caba0da8d5 FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id);
+
+
+--
+-- Name: ledger_entries fk_rails_cb26505157; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_entries
+    ADD CONSTRAINT fk_rails_cb26505157 FOREIGN KEY (ledger_transaction_id) REFERENCES public.ledger_transactions(id);
+
+
+--
+-- Name: ledger_transactions fk_rails_cf7e074829; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ledger_transactions
+    ADD CONSTRAINT fk_rails_cf7e074829 FOREIGN KEY (reversal_of_transaction_id) REFERENCES public.ledger_transactions(id);
 
 
 --
@@ -3277,6 +4203,14 @@ ALTER TABLE ONLY public.couriers
 
 
 --
+-- Name: refunds fk_rails_f2ec94e6da; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.refunds
+    ADD CONSTRAINT fk_rails_f2ec94e6da FOREIGN KEY (approved_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: exchange_rates fk_rails_f3b7ba7619; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3285,11 +4219,27 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
+-- Name: pos_payment_records fk_rails_f3f352271e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pos_payment_records
+    ADD CONSTRAINT fk_rails_f3f352271e FOREIGN KEY (confirmed_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: merchants fk_rails_f4f5b48ca1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.merchants
     ADD CONSTRAINT fk_rails_f4f5b48ca1 FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: cash_handovers fk_rails_f8e8e46539; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cash_handovers
+    ADD CONSTRAINT fk_rails_f8e8e46539 FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
 
 
 --
@@ -3323,6 +4273,20 @@ ALTER TABLE ONLY public.cart_items
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260820131336'),
+('20260820131335'),
+('20260820131334'),
+('20260820131039'),
+('20260820131037'),
+('20260820130505'),
+('20260820130503'),
+('20260820130501'),
+('20260820124644'),
+('20260820124641'),
+('20260820124639'),
+('20260820124637'),
+('20260820124635'),
+('20260820124634'),
 ('20260820012557'),
 ('20260820005826'),
 ('20260820005824'),

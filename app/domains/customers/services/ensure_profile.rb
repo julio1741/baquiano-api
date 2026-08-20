@@ -5,7 +5,7 @@ module Customers
   # Identity::VerifyOtp succeeds in the customer namespace. Idempotent.
   class EnsureProfile
     def self.call(user:)
-      Customer.find_or_create_by!(user: user)
+      ::Customer.find_or_create_by!(user: user)
     end
   end
 end

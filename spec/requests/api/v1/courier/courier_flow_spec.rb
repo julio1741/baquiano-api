@@ -46,6 +46,7 @@ RSpec.describe "Courier profile and delivery execution", type: :request do
       branch = create(:branch)
       order = create(:order, branch: branch, organization: branch.organization, merchant: branch.merchant,
                               current_status: "courier_search")
+      create(:payment_intent, order: order, customer: order.customer, status: "captured")
       delivery = create(:delivery, order: order, branch: branch, status: "offered",
                                     delivery_pin_digest: BlindIndex.digest("4821"))
       offer = create(:dispatch_offer, delivery: delivery, courier: courier)

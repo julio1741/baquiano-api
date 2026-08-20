@@ -200,5 +200,50 @@ manual end-to-end completo (OTP real → onboarding → catálogo → pedido →
 despacho → entrega con PIN) que encontró y corrigió varios bugs invisibles
 para la suite automatizada (ver decisions.md).
 
-Los dominios de negocio restantes (Payments, Notifications, ...) se
-agregan en los incrementos siguientes.
+**Incremento 6** (Pagos y contabilidad): `PaymentIntent` protegido con el
+mismo patrón que `Order`/`Delivery` (`Payments::TransitionPaymentIntent`
+como único punto de cambio de estado), máquina de estados completa
+(`created` → `pending_customer_action` → `pending_review` → `captured` /
+`failed`, con `refunded`/`partially_refunded` al final), sincronizada con
+`Order` (`payment_pending` avanza a `merchant_pending` solo cuando el pago
+se confirma — cerrando un camino sin salida que quedó abierto desde el
+Incremento 4). `Payments::SubmitMobilePayment` nunca confirma
+automáticamente (nunca por imagen/OCR); detecta referencia de Pago Móvil
+reutilizada incluso entre pedidos distintos y la marca `duplicate` para
+revisión humana, no la rechaza sola. `Cash::CollectCashPayment` bloquea la
+recolección si supera el límite de exposición del repartidor (probado con
+un test de concurrencia real además del caso secuencial). `Refund` con el
+mismo guardado de estado; `Payments::DecideRefund` impide que quien
+aprueba sea quien solicitó el reembolso (autoaprobación prohibida,
+escenario obligatorio de la sección 10) y aprobar+ejecutar es un solo paso
+manual (no hay pasarela real que "esperar" — sección 16). `Ledger::PostTransaction`
+es el único punto de entrada para asientos contables: valida que la suma
+de débitos sea igual a la suma de créditos por moneda antes de persistir
+nada, y `LedgerTransaction`/`LedgerEntry` son *append-only*.
+`Ledger::RecordOrderSettlementEntries` registra cobro cliente, venta neta
+del comercio (ya descontada la comisión de Baquiano vía
+`commission_rate_basis_points`), tarifa de entrega y comisión total por
+cada pago capturado. `Reconciliation::CreateBatch` compara transacciones
+internas contra un archivo externo (no hay integración bancaria real) y
+expone la diferencia por ítem; `Settlements::Create` calcula liquidaciones
+de comercio/repartidor directamente desde `Order`/`Delivery` del período.
+Endpoints cliente (enviar Pago Móvil, solicitar reembolso), repartidor
+(cobrar efectivo/POS en la entrega, entregar efectivo a un supervisor,
+consultar efectivo pendiente y liquidaciones propias) y admin (revisión de
+Pago Móvil/POS, decidir reembolsos, conciliación, aprobar y pagar
+liquidaciones, gestionar efectivo — con una separación explícita de
+autorización para que el propio token de un repartidor nunca pueda tocar
+campos de solo-admin). Jobs de expiración de intents, detección de
+referencias duplicadas (barrido de respaldo para condiciones de carrera) y
+recálculo de balances de efectivo desde datos primarios. Ver
+[`docs/architecture/decisions.md`](docs/architecture/decisions.md) para lo
+pendiente (sin integración bancaria real por diseño, liquidaciones no
+descuentan reembolsos posteriores, ventana de expiración de pago y
+bloqueo de efectivo son constantes sin validar). 171 tests en total,
+incluyendo otro walkthrough manual end-to-end completo que encontró y
+corrigió 2 bugs más invisibles para la suite automatizada (tasa de
+comisión del comercio sin forma de configurarse vía API, y una entrega que
+podía marcarse completada sin que el pago se hubiera capturado nunca).
+
+Los dominios de negocio restantes (Notifications, Support, Risk, Audit,
+Configuration) se agregan en los incrementos siguientes.

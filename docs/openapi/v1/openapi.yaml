@@ -327,6 +327,11 @@ components:
                  en_route, courier_at_customer, delivered, cancellation_requested, cancelled, delivery_failed,
                  refund_pending, partially_refunded, refunded, disputed, closed]
         payment_status: { type: string, enum: [pending, not_required, confirmed, refunded] }
+        payment_method: { type: string, enum: [mobile_payment, pos_on_delivery, cash] }
+        payment_intent_status:
+          type: string
+          nullable: true
+          description: The order's PaymentIntent status, once one exists (see PaymentIntent).
         fulfillment_type: { type: string, enum: [delivery, pickup] }
         delivery_model: { type: string, enum: [baquiano, merchant, hybrid] }
         currency: { type: string }
@@ -439,6 +444,144 @@ components:
       properties:
         latitude: { type: number, format: double }
         longitude: { type: number, format: double }
+
+    PaymentIntent:
+      type: object
+      description: >
+        provider is always "manual" — there is no real bank/payment
+        gateway integration (section 16 of the spec).
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        payment_method: { type: string, enum: [mobile_payment, pos_on_delivery, cash] }
+        status:
+          type: string
+          enum: [created, pending_customer_action, pending_review, authorized, captured, failed, cancelled,
+                 expired, partially_refunded, refunded]
+        amount: { type: integer }
+        currency: { type: string }
+        expires_at: { type: string, format: date-time, nullable: true }
+        failure_code: { type: string, nullable: true }
+        failure_message: { type: string, nullable: true }
+
+    MobilePaymentSubmission:
+      type: object
+      description: >
+        Never confirmed automatically — a human always reviews it. A
+        reused reference is recorded and flagged review_status=duplicate
+        rather than rejected outright.
+      properties:
+        id: { type: string, format: uuid }
+        payment_intent_id: { type: string, format: uuid }
+        reference: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        paid_at: { type: string, format: date-time }
+        review_status: { type: string, enum: [submitted, under_review, confirmed, rejected, duplicate] }
+        duplicate_of_submission_id: { type: string, format: uuid, nullable: true }
+        rejection_reason: { type: string, nullable: true }
+
+    PosPaymentRecord:
+      type: object
+      description: Self-confirming — recorded by whoever is present at the terminal, no separate review step.
+      properties:
+        id: { type: string, format: uuid }
+        payment_intent_id: { type: string, format: uuid }
+        amount: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [confirmed, reversed] }
+        receipt_reference: { type: string, nullable: true }
+        confirmed_by_user_id: { type: string, format: uuid }
+        confirmed_at: { type: string, format: date-time }
+
+    Refund:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        status: { type: string, enum: [requested, approved, rejected, completed, failed] }
+        reason_code: { type: string }
+        reason_notes: { type: string, nullable: true }
+        amount: { type: integer }
+        currency: { type: string }
+        requested_by_user_id: { type: string, format: uuid }
+        approved_by_user_id: { type: string, format: uuid, nullable: true }
+        requested_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        failure_code: { type: string, nullable: true }
+
+    ReconciliationBatch:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string }
+        payment_method: { type: string }
+        currency: { type: string }
+        period_start: { type: string, format: date }
+        period_end: { type: string, format: date }
+        status: { type: string, enum: [open, completed] }
+        expected_amount: { type: integer }
+        actual_amount: { type: integer }
+        difference_amount: { type: integer }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ReconciliationItem" }
+
+    ReconciliationItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        external_reference: { type: string, nullable: true }
+        expected_amount: { type: integer }
+        actual_amount: { type: integer }
+        difference_amount: { type: integer }
+        status: { type: string, enum: [pending, matched, discrepant, resolved] }
+        resolution_code: { type: string, nullable: true }
+        resolved_at: { type: string, format: date-time, nullable: true }
+
+    Settlement:
+      type: object
+      description: >
+        gross/commission computed directly from Order/Delivery data for
+        the period, not from the ledger — see docs/architecture/decisions.md
+        for what that does and doesn't account for (e.g. later refunds).
+      properties:
+        id: { type: string, format: uuid }
+        beneficiary_type: { type: string, enum: [Merchant, Courier] }
+        beneficiary_id: { type: string, format: uuid }
+        period_start: { type: string, format: date }
+        period_end: { type: string, format: date }
+        currency: { type: string }
+        gross_amount: { type: integer }
+        commission_amount: { type: integer }
+        adjustment_amount: { type: integer }
+        net_amount: { type: integer }
+        status: { type: string, enum: [pending, approved, paid, failed] }
+        paid_at: { type: string, format: date-time, nullable: true }
+
+    CashBalance:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        courier_id: { type: string, format: uuid }
+        currency: { type: string }
+        amount_held: { type: integer }
+        exposure_limit: { type: integer }
+        blocked_for_cash_orders: { type: boolean }
+        calculated_at: { type: string, format: date-time }
+
+    CashHandover:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        courier_id: { type: string, format: uuid }
+        amount: { type: integer }
+        currency: { type: string }
+        status: { type: string, enum: [pending, confirmed] }
+        handed_over_at: { type: string, format: date-time }
+        confirmed_at: { type: string, format: date-time, nullable: true }
 
   parameters:
     role_assignment_reason:
@@ -2175,3 +2318,601 @@ paths:
               required: [courier_id]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+
+  /api/v1/customer/orders/{order_id}/mobile_payment_submissions:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Submit a Pago Móvil payment reference for this order
+      description: Never confirmed automatically — routes the PaymentIntent to pending_review for a human to decide.
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reference: { type: string, example: "REF001234" }
+                amount: { type: integer }
+                paid_at: { type: string, format: date-time }
+                origin_bank_code: { type: string }
+                destination_bank_code: { type: string }
+                payer_document_masked: { type: string, example: "V-****5678" }
+                payer_phone_masked: { type: string, example: "0414-***4567" }
+                evidence_attachment_reference: { type: string }
+              required: [reference, amount, paid_at]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MobilePaymentSubmission" }
+        "404": { description: Not found (also returned for another customer's order) }
+
+  /api/v1/customer/orders/{order_id}/refunds:
+    parameters:
+      - name: order_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Request a refund for this order
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason_code: { type: string }
+                amount: { type: integer }
+                reason_notes: { type: string }
+                idempotency_key: { type: string }
+              required: [reason_code, amount, idempotency_key]
+      responses:
+        "201":
+          description: Created (or the original refund, if this idempotency_key was already used)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Refund" }
+        "409":
+          description: This order has no captured payment to refund, or the amount exceeds what's refundable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/courier/deliveries/{id}/collect_cash_payment:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Collect a cash payment on delivery
+      description: >
+        Blocked if this would exceed the courier's cash exposure limit,
+        they aren't cash-enabled, or they're blocked from cash orders
+        (section 10, scenario 18: "Efectivo supera límite").
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK }
+        "409":
+          description: Would exceed exposure limit (error.code cash_exposure_exceeded)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/courier/deliveries/{id}/record_pos_payment:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Record a POS card payment on delivery
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                receipt_reference: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /api/v1/courier/cash_balances:
+    get:
+      summary: View my own cash balance(s)
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CashBalance" } }
+
+  /api/v1/courier/cash_handovers:
+    get:
+      summary: List my cash handovers
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CashHandover" } }
+    post:
+      summary: Initiate a cash handover to a supervisor
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                received_by_user_id: { type: string, format: uuid }
+                amount: { type: integer }
+                idempotency_key: { type: string }
+                evidence_attachment_reference: { type: string }
+                notes: { type: string }
+              required: [received_by_user_id, amount, idempotency_key]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashHandover" }
+
+  /api/v1/courier/settlements:
+    get:
+      summary: List my own settlements (ganancias)
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Settlement" } }
+
+  /api/v1/admin/mobile_payment_submissions:
+    get:
+      summary: List mobile payment submissions awaiting review
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/MobilePaymentSubmission" } }
+
+  /api/v1/admin/mobile_payment_submissions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a mobile payment submission
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MobilePaymentSubmission" }
+
+  /api/v1/admin/mobile_payment_submissions/{id}/approve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Approve a mobile payment submission (captures the PaymentIntent)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MobilePaymentSubmission" }
+
+  /api/v1/admin/mobile_payment_submissions/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Reject a mobile payment submission
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejection_reason: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MobilePaymentSubmission" }
+
+  /api/v1/admin/pos_payment_records:
+    get:
+      summary: List POS payment records (read-only — they self-confirm at creation)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/PosPaymentRecord" } }
+
+  /api/v1/admin/refunds:
+    get:
+      summary: List refunds, optionally filtered by status
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Refund" } }
+
+  /api/v1/admin/refunds/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a refund
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Refund" } } } }
+
+  /api/v1/admin/refunds/{id}/approve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Approve and execute a refund
+      description: >
+        The approver can never be the same user who requested the refund
+        (section 10, scenario 22 generalized to every money-moving
+        approval). Approve and execute happen in one step — there's no
+        real payment gateway to wait on.
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Refund" } } } }
+        "403":
+          description: Cannot approve your own refund request (error.code self_approval_forbidden)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: This refund was already decided (error.code not_requested)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/admin/refunds/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Reject a refund request
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                failure_code: { type: string }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Refund" } } } }
+
+  /api/v1/admin/reconciliation_batches:
+    get:
+      summary: List reconciliation batches
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ReconciliationBatch" } }
+    post:
+      summary: Create a reconciliation batch, matching internal transactions against an external record set
+      description: >
+        There's no real provider integration (section 16) — external_records
+        simulates a manually uploaded bank/provider statement.
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider: { type: string }
+                payment_method: { type: string }
+                currency: { type: string }
+                period_start: { type: string, format: date }
+                period_end: { type: string, format: date }
+                external_records:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      external_reference: { type: string }
+                      amount: { type: integer }
+              required: [provider, payment_method, currency, period_start, period_end]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationBatch" }
+
+  /api/v1/admin/reconciliation_batches/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a reconciliation batch with its items
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationBatch" }
+
+  /api/v1/admin/reconciliation_batches/{id}/complete:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Close a reconciliation batch
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationBatch" }
+        "409":
+          description: All items must be matched or resolved first (error.code unresolved_items)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/admin/reconciliation_batches/items/{item_id}/resolve:
+    parameters:
+      - name: item_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Resolve a discrepant reconciliation item
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resolution_code: { type: string }
+                resolution_notes: { type: string }
+              required: [resolution_code]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationItem" }
+
+  /api/v1/admin/settlements:
+    get:
+      summary: List settlements, optionally filtered by status
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Settlement" } }
+    post:
+      summary: Create a settlement for a merchant or courier over a period
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                beneficiary_type: { type: string, enum: [merchant, courier] }
+                beneficiary_id: { type: string, format: uuid }
+                period_start: { type: string, format: date }
+                period_end: { type: string, format: date }
+                currency: { type: string }
+                idempotency_key: { type: string }
+              required: [beneficiary_type, beneficiary_id, period_start, period_end, currency, idempotency_key]
+      responses:
+        "201":
+          description: Created (or the original settlement, if this idempotency_key was already used)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+
+  /api/v1/admin/settlements/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a settlement
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+
+  /api/v1/admin/settlements/{id}/approve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Approve a settlement
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+
+  /api/v1/admin/settlements/{id}/mark_paid:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Mark a settlement as paid (posts the corresponding ledger entry)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payment_reference: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+
+  /api/v1/admin/cash_handovers:
+    get:
+      summary: List cash handovers, optionally filtered by status
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CashHandover" } }
+
+  /api/v1/admin/cash_handovers/{id}/confirm:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Confirm a courier's cash handover (reduces their held balance)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CashHandover" }
+
+  /api/v1/admin/cash_balances:
+    get:
+      summary: List couriers' cash balances
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CashBalance" } }
+
+  /api/v1/admin/cash_balances/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Update a courier's cash exposure limit or block them from cash orders
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CashBalance" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }

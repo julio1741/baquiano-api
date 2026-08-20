@@ -8,6 +8,9 @@ class Courier < ApplicationRecord
   has_many :deliveries, dependent: :restrict_with_error
   has_many :dispatch_offers, dependent: :restrict_with_error
   has_many :location_pings, dependent: :destroy
+  has_many :cash_balances, dependent: :restrict_with_error
+  has_many :cash_handovers, dependent: :restrict_with_error
+  has_many :settlements, as: :beneficiary, dependent: :restrict_with_error
 
   enum :courier_type, { baquiano: "baquiano", merchant: "merchant" }, validate: true, prefix: true
   enum :status, { pending: "pending", active: "active", suspended: "suspended" }, validate: true

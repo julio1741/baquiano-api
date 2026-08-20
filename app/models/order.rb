@@ -17,6 +17,8 @@ class Order < ApplicationRecord
   has_many :order_status_histories, dependent: :restrict_with_error
   has_many :order_transition_requests, dependent: :restrict_with_error
   has_one :delivery, dependent: :restrict_with_error
+  has_one :payment_intent, dependent: :restrict_with_error
+  has_many :refunds, dependent: :restrict_with_error
 
   enum :current_status, {
     payment_pending: "payment_pending",
@@ -49,10 +51,13 @@ class Order < ApplicationRecord
 
   enum :fulfillment_type, { delivery: "delivery", pickup: "pickup" }, validate: true
   enum :delivery_model, { baquiano: "baquiano", merchant: "merchant", hybrid: "hybrid" }, validate: true, prefix: true
+  enum :payment_method, { mobile_payment: "mobile_payment", pos_on_delivery: "pos_on_delivery", cash: "cash" },
+       validate: true, prefix: true
 
   validates :public_number, presence: true, uniqueness: true
   validates :idempotency_key, presence: true, uniqueness: { scope: :customer_id }
   validates :currency, presence: true
+  validates :payment_method, presence: true
   validates :subtotal_amount, :total_amount, numericality: { greater_than_or_equal_to: 0 }
 
   validate :total_matches_components
