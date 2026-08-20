@@ -62,6 +62,7 @@ module Api
             delivery_fee_amount: order.delivery_fee_amount,
             total_amount: order.total_amount,
             placed_at: order.placed_at,
+            delivery_pin: order.delivery&.delivery_pin,
             items: order.order_items.map { |item| item_body(item) }
           }
         end

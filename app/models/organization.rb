@@ -9,6 +9,7 @@ class Organization < ApplicationRecord
 
   has_many :merchants, dependent: :restrict_with_error
   has_many :branches, dependent: :restrict_with_error
+  has_many :couriers, dependent: :restrict_with_error
   has_many :roles, dependent: :restrict_with_error
   has_many :role_assignments, dependent: :restrict_with_error
 

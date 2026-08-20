@@ -44,7 +44,28 @@ module Orders
         timestamp_column: :cancelled_at, event_type: "OrderCancelled"
       },
       %w[merchant_rejected closed] => { actor: :system, event_type: "OrderStatusChanged" },
-      %w[cancelled closed] => { actor: :system, event_type: "OrderStatusChanged" }
+      %w[cancelled closed] => { actor: :system, event_type: "OrderStatusChanged" },
+
+      # From here on, driven by Deliveries::TransitionDelivery's own status
+      # changes (Dispatch/Deliveries domains, Increment 5) — never called
+      # directly from a controller, always actor: system.
+      %w[ready_for_pickup courier_search] => { actor: :system, event_type: "OrderStatusChanged" },
+      %w[courier_search courier_assigned] => { actor: :system, event_type: "CourierAssigned" },
+      %w[courier_assigned courier_at_merchant] => { actor: :system, event_type: "CourierArrivedAtMerchant" },
+      %w[courier_at_merchant picked_up] => {
+        actor: :system, timestamp_column: :picked_up_at, event_type: "OrderPickedUp"
+      },
+      %w[picked_up en_route] => { actor: :system, event_type: "OrderStatusChanged" },
+      %w[en_route courier_at_customer] => { actor: :system, event_type: "CourierArrivedAtCustomer" },
+      %w[courier_at_customer delivered] => {
+        actor: :system, timestamp_column: :delivered_at, event_type: "OrderDelivered"
+      },
+      %w[courier_search delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
+      %w[courier_assigned delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
+      %w[courier_at_merchant delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
+      %w[picked_up delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
+      %w[en_route delivery_failed] => { actor: :system, event_type: "DeliveryFailed" },
+      %w[courier_at_customer delivery_failed] => { actor: :system, event_type: "DeliveryFailed" }
     }.freeze
 
     def self.call(...) = new(...).call

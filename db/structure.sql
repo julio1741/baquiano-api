@@ -227,6 +227,83 @@ CREATE TABLE public.cities (
 
 
 --
+-- Name: courier_availabilities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.courier_availabilities (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    courier_id uuid NOT NULL,
+    status character varying NOT NULL,
+    zone_id uuid,
+    started_at timestamp with time zone NOT NULL,
+    ended_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: courier_branch_assignments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.courier_branch_assignments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    courier_id uuid NOT NULL,
+    branch_id uuid NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    starts_at timestamp with time zone NOT NULL,
+    ends_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: courier_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.courier_documents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    courier_id uuid NOT NULL,
+    document_type character varying NOT NULL,
+    attachment_reference character varying NOT NULL,
+    document_number_encrypted text,
+    document_number_digest character varying,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    expires_at timestamp with time zone,
+    reviewed_by_user_id uuid,
+    reviewed_at timestamp with time zone,
+    rejection_reason character varying,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: couriers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.couriers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    organization_id uuid,
+    courier_type character varying NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    approval_status character varying DEFAULT 'pending'::character varying NOT NULL,
+    risk_level character varying DEFAULT 'standard'::character varying NOT NULL,
+    cash_enabled boolean DEFAULT false NOT NULL,
+    maximum_cash_exposure bigint,
+    approved_at timestamp with time zone,
+    suspended_at timestamp with time zone,
+    suspension_reason character varying,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT couriers_maximum_cash_exposure_non_negative CHECK (((maximum_cash_exposure IS NULL) OR (maximum_cash_exposure >= 0)))
+);
+
+
+--
 -- Name: customers; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -242,6 +319,43 @@ CREATE TABLE public.customers (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     CONSTRAINT customers_total_completed_orders_non_negative CHECK ((total_completed_orders >= 0))
+);
+
+
+--
+-- Name: deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.deliveries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    order_id uuid NOT NULL,
+    courier_id uuid,
+    branch_id uuid NOT NULL,
+    delivery_model character varying NOT NULL,
+    status character varying DEFAULT 'pending_assignment'::character varying NOT NULL,
+    pickup_location public.geography(Point,4326) NOT NULL,
+    dropoff_location public.geography(Point,4326) NOT NULL,
+    estimated_distance_meters integer,
+    estimated_duration_seconds integer,
+    estimated_pickup_at timestamp with time zone,
+    estimated_delivery_at timestamp with time zone,
+    assigned_at timestamp with time zone,
+    accepted_at timestamp with time zone,
+    arrived_at_merchant_at timestamp with time zone,
+    picked_up_at timestamp with time zone,
+    arrived_at_customer_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    failed_at timestamp with time zone,
+    failure_reason character varying,
+    delivery_pin_digest character varying,
+    proof_of_pickup_attachment_reference character varying,
+    proof_of_delivery_attachment_reference character varying,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    delivery_pin_encrypted text,
+    CONSTRAINT deliveries_estimated_distance_meters_non_negative CHECK (((estimated_distance_meters IS NULL) OR (estimated_distance_meters >= 0))),
+    CONSTRAINT deliveries_estimated_duration_seconds_non_negative CHECK (((estimated_duration_seconds IS NULL) OR (estimated_duration_seconds >= 0)))
 );
 
 
@@ -271,6 +385,28 @@ CREATE TABLE public.delivery_fee_rules (
 
 
 --
+-- Name: delivery_incidents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.delivery_incidents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    delivery_id uuid NOT NULL,
+    order_id uuid NOT NULL,
+    reported_by_user_id uuid NOT NULL,
+    incident_type character varying NOT NULL,
+    severity character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    description text NOT NULL,
+    resolution text,
+    resolved_by_user_id uuid,
+    occurred_at timestamp with time zone NOT NULL,
+    resolved_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: devices; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -290,6 +426,26 @@ CREATE TABLE public.devices (
     blocked_at timestamp with time zone,
     last_seen_at timestamp with time zone,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: dispatch_offers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dispatch_offers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    delivery_id uuid NOT NULL,
+    courier_id uuid NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    offered_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    responded_at timestamp with time zone,
+    rejection_reason character varying,
+    score_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL
 );
@@ -353,6 +509,27 @@ CREATE TABLE public.inventory_items (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     CONSTRAINT inventory_items_exactly_one_target CHECK ((((product_id IS NOT NULL) AND (product_variant_id IS NULL)) OR ((product_id IS NULL) AND (product_variant_id IS NOT NULL))))
+);
+
+
+--
+-- Name: location_pings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.location_pings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    courier_id uuid NOT NULL,
+    delivery_id uuid,
+    location public.geography(Point,4326) NOT NULL,
+    device_recorded_at timestamp with time zone NOT NULL,
+    server_received_at timestamp with time zone NOT NULL,
+    accuracy_meters numeric(8,2),
+    speed_meters_per_second numeric(8,2),
+    heading_degrees numeric(5,2),
+    source character varying NOT NULL,
+    simulated_location_suspected boolean DEFAULT false NOT NULL,
+    anomaly_flags jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -895,6 +1072,25 @@ CREATE TABLE public.users (
 
 
 --
+-- Name: vehicles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vehicles (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    courier_id uuid NOT NULL,
+    vehicle_type character varying NOT NULL,
+    brand character varying,
+    model character varying,
+    color character varying,
+    plate_encrypted text,
+    plate_digest character varying,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: zones; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -992,11 +1188,51 @@ ALTER TABLE ONLY public.cities
 
 
 --
+-- Name: courier_availabilities courier_availabilities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_availabilities
+    ADD CONSTRAINT courier_availabilities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: courier_branch_assignments courier_branch_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_branch_assignments
+    ADD CONSTRAINT courier_branch_assignments_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: courier_documents courier_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_documents
+    ADD CONSTRAINT courier_documents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: couriers couriers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.couriers
+    ADD CONSTRAINT couriers_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: customers customers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.customers
     ADD CONSTRAINT customers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: deliveries deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deliveries
+    ADD CONSTRAINT deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -1008,11 +1244,27 @@ ALTER TABLE ONLY public.delivery_fee_rules
 
 
 --
+-- Name: delivery_incidents delivery_incidents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_incidents
+    ADD CONSTRAINT delivery_incidents_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: devices devices_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.devices
     ADD CONSTRAINT devices_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: dispatch_offers dispatch_offers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispatch_offers
+    ADD CONSTRAINT dispatch_offers_pkey PRIMARY KEY (id);
 
 
 --
@@ -1037,6 +1289,14 @@ ALTER TABLE ONLY public.exchange_rates
 
 ALTER TABLE ONLY public.inventory_items
     ADD CONSTRAINT inventory_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: location_pings location_pings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.location_pings
+    ADD CONSTRAINT location_pings_pkey PRIMARY KEY (id);
 
 
 --
@@ -1240,6 +1500,14 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: vehicles vehicles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vehicles
+    ADD CONSTRAINT vehicles_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: zones zones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1423,10 +1691,150 @@ CREATE UNIQUE INDEX index_cities_on_name_and_state_name_and_country_code ON publ
 
 
 --
+-- Name: index_courier_availabilities_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_availabilities_on_courier_id ON public.courier_availabilities USING btree (courier_id);
+
+
+--
+-- Name: index_courier_availabilities_on_open_window; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_courier_availabilities_on_open_window ON public.courier_availabilities USING btree (courier_id) WHERE (ended_at IS NULL);
+
+
+--
+-- Name: index_courier_availabilities_on_zone_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_availabilities_on_zone_id ON public.courier_availabilities USING btree (zone_id);
+
+
+--
+-- Name: index_courier_branch_assignments_on_branch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_branch_assignments_on_branch_id ON public.courier_branch_assignments USING btree (branch_id);
+
+
+--
+-- Name: index_courier_branch_assignments_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_branch_assignments_on_courier_id ON public.courier_branch_assignments USING btree (courier_id);
+
+
+--
+-- Name: index_courier_branch_assignments_on_courier_id_and_branch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_branch_assignments_on_courier_id_and_branch_id ON public.courier_branch_assignments USING btree (courier_id, branch_id);
+
+
+--
+-- Name: index_courier_documents_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_documents_on_courier_id ON public.courier_documents USING btree (courier_id);
+
+
+--
+-- Name: index_courier_documents_on_document_number_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_documents_on_document_number_digest ON public.courier_documents USING btree (document_number_digest);
+
+
+--
+-- Name: index_courier_documents_on_reviewed_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_documents_on_reviewed_by_user_id ON public.courier_documents USING btree (reviewed_by_user_id);
+
+
+--
+-- Name: index_courier_documents_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_courier_documents_on_status ON public.courier_documents USING btree (status);
+
+
+--
+-- Name: index_couriers_on_approval_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_couriers_on_approval_status ON public.couriers USING btree (approval_status);
+
+
+--
+-- Name: index_couriers_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_couriers_on_organization_id ON public.couriers USING btree (organization_id);
+
+
+--
+-- Name: index_couriers_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_couriers_on_status ON public.couriers USING btree (status);
+
+
+--
+-- Name: index_couriers_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_couriers_on_user_id ON public.couriers USING btree (user_id);
+
+
+--
 -- Name: index_customers_on_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX index_customers_on_user_id ON public.customers USING btree (user_id);
+
+
+--
+-- Name: index_deliveries_on_branch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deliveries_on_branch_id ON public.deliveries USING btree (branch_id);
+
+
+--
+-- Name: index_deliveries_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deliveries_on_courier_id ON public.deliveries USING btree (courier_id);
+
+
+--
+-- Name: index_deliveries_on_dropoff_location; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deliveries_on_dropoff_location ON public.deliveries USING gist (dropoff_location);
+
+
+--
+-- Name: index_deliveries_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_deliveries_on_order_id ON public.deliveries USING btree (order_id);
+
+
+--
+-- Name: index_deliveries_on_pickup_location; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deliveries_on_pickup_location ON public.deliveries USING gist (pickup_location);
+
+
+--
+-- Name: index_deliveries_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_deliveries_on_status ON public.deliveries USING btree (status);
 
 
 --
@@ -1444,6 +1852,41 @@ CREATE INDEX index_delivery_fee_rules_on_zone_id ON public.delivery_fee_rules US
 
 
 --
+-- Name: index_delivery_incidents_on_delivery_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_delivery_incidents_on_delivery_id ON public.delivery_incidents USING btree (delivery_id);
+
+
+--
+-- Name: index_delivery_incidents_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_delivery_incidents_on_order_id ON public.delivery_incidents USING btree (order_id);
+
+
+--
+-- Name: index_delivery_incidents_on_reported_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_delivery_incidents_on_reported_by_user_id ON public.delivery_incidents USING btree (reported_by_user_id);
+
+
+--
+-- Name: index_delivery_incidents_on_resolved_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_delivery_incidents_on_resolved_by_user_id ON public.delivery_incidents USING btree (resolved_by_user_id);
+
+
+--
+-- Name: index_delivery_incidents_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_delivery_incidents_on_status ON public.delivery_incidents USING btree (status);
+
+
+--
 -- Name: index_devices_on_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1455,6 +1898,41 @@ CREATE INDEX index_devices_on_user_id ON public.devices USING btree (user_id);
 --
 
 CREATE UNIQUE INDEX index_devices_on_user_id_and_installation_id ON public.devices USING btree (user_id, installation_id);
+
+
+--
+-- Name: index_dispatch_offers_on_accepted_delivery; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_dispatch_offers_on_accepted_delivery ON public.dispatch_offers USING btree (delivery_id) WHERE ((status)::text = 'accepted'::text);
+
+
+--
+-- Name: index_dispatch_offers_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_dispatch_offers_on_courier_id ON public.dispatch_offers USING btree (courier_id);
+
+
+--
+-- Name: index_dispatch_offers_on_delivery_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_dispatch_offers_on_delivery_id ON public.dispatch_offers USING btree (delivery_id);
+
+
+--
+-- Name: index_dispatch_offers_on_delivery_id_and_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_dispatch_offers_on_delivery_id_and_courier_id ON public.dispatch_offers USING btree (delivery_id, courier_id);
+
+
+--
+-- Name: index_dispatch_offers_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_dispatch_offers_on_status ON public.dispatch_offers USING btree (status);
 
 
 --
@@ -1532,6 +2010,34 @@ CREATE INDEX index_inventory_items_on_product_variant_id ON public.inventory_ite
 --
 
 CREATE INDEX index_inventory_items_on_updated_by_user_id ON public.inventory_items USING btree (updated_by_user_id);
+
+
+--
+-- Name: index_location_pings_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_location_pings_on_courier_id ON public.location_pings USING btree (courier_id);
+
+
+--
+-- Name: index_location_pings_on_courier_id_and_server_received_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_location_pings_on_courier_id_and_server_received_at ON public.location_pings USING btree (courier_id, server_received_at);
+
+
+--
+-- Name: index_location_pings_on_delivery_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_location_pings_on_delivery_id ON public.location_pings USING btree (delivery_id);
+
+
+--
+-- Name: index_location_pings_on_location; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_location_pings_on_location ON public.location_pings USING gist (location);
 
 
 --
@@ -1672,6 +2178,13 @@ CREATE INDEX index_orders_on_customer_id ON public.orders USING btree (customer_
 --
 
 CREATE UNIQUE INDEX index_orders_on_customer_id_and_idempotency_key ON public.orders USING btree (customer_id, idempotency_key);
+
+
+--
+-- Name: index_orders_on_delivery_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_orders_on_delivery_id ON public.orders USING btree (delivery_id) WHERE (delivery_id IS NOT NULL);
 
 
 --
@@ -2025,6 +2538,20 @@ CREATE INDEX index_users_on_status ON public.users USING btree (status);
 
 
 --
+-- Name: index_vehicles_on_courier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vehicles_on_courier_id ON public.vehicles USING btree (courier_id);
+
+
+--
+-- Name: index_vehicles_on_plate_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_vehicles_on_plate_digest ON public.vehicles USING btree (plate_digest);
+
+
+--
 -- Name: index_zones_on_city_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2054,11 +2581,35 @@ ALTER TABLE ONLY public.role_assignments
 
 
 --
+-- Name: location_pings fk_rails_04930166aa; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.location_pings
+    ADD CONSTRAINT fk_rails_04930166aa FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
+
+
+--
+-- Name: deliveries fk_rails_0557fe5297; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deliveries
+    ADD CONSTRAINT fk_rails_0557fe5297 FOREIGN KEY (branch_id) REFERENCES public.branches(id);
+
+
+--
 -- Name: role_assignments fk_rails_07a886715c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.role_assignments
     ADD CONSTRAINT fk_rails_07a886715c FOREIGN KEY (revoked_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: courier_branch_assignments fk_rails_07d5f97fc3; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_branch_assignments
+    ADD CONSTRAINT fk_rails_07d5f97fc3 FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
 
 
 --
@@ -2110,11 +2661,27 @@ ALTER TABLE ONLY public.delivery_fee_rules
 
 
 --
+-- Name: delivery_incidents fk_rails_21283e0247; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_incidents
+    ADD CONSTRAINT fk_rails_21283e0247 FOREIGN KEY (reported_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: catalogs fk_rails_2236035560; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.catalogs
     ADD CONSTRAINT fk_rails_2236035560 FOREIGN KEY (branch_id) REFERENCES public.branches(id);
+
+
+--
+-- Name: couriers fk_rails_26c7728c04; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.couriers
+    ADD CONSTRAINT fk_rails_26c7728c04 FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
 
 
 --
@@ -2166,6 +2733,14 @@ ALTER TABLE ONLY public.order_status_histories
 
 
 --
+-- Name: courier_availabilities fk_rails_36d8038da9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_availabilities
+    ADD CONSTRAINT fk_rails_36d8038da9 FOREIGN KEY (zone_id) REFERENCES public.zones(id);
+
+
+--
 -- Name: role_assignments fk_rails_373c2f5151; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2198,6 +2773,14 @@ ALTER TABLE ONLY public.orders
 
 
 --
+-- Name: deliveries fk_rails_3eba625948; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deliveries
+    ADD CONSTRAINT fk_rails_3eba625948 FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+
+--
 -- Name: devices fk_rails_410b63ef65; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2211,6 +2794,14 @@ ALTER TABLE ONLY public.devices
 
 ALTER TABLE ONLY public.orders
     ADD CONSTRAINT fk_rails_412cc65b8b FOREIGN KEY (merchant_id) REFERENCES public.merchants(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: dispatch_offers fk_rails_41f38f6d1a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispatch_offers
+    ADD CONSTRAINT fk_rails_41f38f6d1a FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id);
 
 
 --
@@ -2230,6 +2821,14 @@ ALTER TABLE ONLY public.inventory_items
 
 
 --
+-- Name: courier_documents fk_rails_4a7131aafb; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_documents
+    ADD CONSTRAINT fk_rails_4a7131aafb FOREIGN KEY (reviewed_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: carts fk_rails_4b74985b3d; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2246,11 +2845,35 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: vehicles fk_rails_4e457adf26; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vehicles
+    ADD CONSTRAINT fk_rails_4e457adf26 FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
+
+
+--
+-- Name: delivery_incidents fk_rails_4f2b6e6274; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_incidents
+    ADD CONSTRAINT fk_rails_4f2b6e6274 FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+
+--
 -- Name: cart_item_modifiers fk_rails_506772ae83; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cart_item_modifiers
     ADD CONSTRAINT fk_rails_506772ae83 FOREIGN KEY (cart_item_id) REFERENCES public.cart_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: deliveries fk_rails_548a575cd2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deliveries
+    ADD CONSTRAINT fk_rails_548a575cd2 FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
 
 
 --
@@ -2326,6 +2949,14 @@ ALTER TABLE ONLY public.cart_items
 
 
 --
+-- Name: delivery_incidents fk_rails_7484e77e54; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_incidents
+    ADD CONSTRAINT fk_rails_7484e77e54 FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id);
+
+
+--
 -- Name: sessions fk_rails_758836b4f0; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2379,6 +3010,22 @@ ALTER TABLE ONLY public.role_assignments
 
 ALTER TABLE ONLY public.quotes
     ADD CONSTRAINT fk_rails_8ecd5fdf28 FOREIGN KEY (cart_id) REFERENCES public.carts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: location_pings fk_rails_8fe7d51b95; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.location_pings
+    ADD CONSTRAINT fk_rails_8fe7d51b95 FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id);
+
+
+--
+-- Name: delivery_incidents fk_rails_9044298270; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delivery_incidents
+    ADD CONSTRAINT fk_rails_9044298270 FOREIGN KEY (resolved_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -2446,6 +3093,14 @@ ALTER TABLE ONLY public.sessions
 
 
 --
+-- Name: courier_availabilities fk_rails_af90fc3ab2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_availabilities
+    ADD CONSTRAINT fk_rails_af90fc3ab2 FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
+
+
+--
 -- Name: service_areas fk_rails_b351f1b628; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2459,6 +3114,14 @@ ALTER TABLE ONLY public.service_areas
 
 ALTER TABLE ONLY public.categories
     ADD CONSTRAINT fk_rails_b7f1bb9825 FOREIGN KEY (parent_category_id) REFERENCES public.categories(id) ON DELETE SET NULL;
+
+
+--
+-- Name: courier_branch_assignments fk_rails_baccb566a4; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_branch_assignments
+    ADD CONSTRAINT fk_rails_baccb566a4 FOREIGN KEY (branch_id) REFERENCES public.branches(id);
 
 
 --
@@ -2491,6 +3154,14 @@ ALTER TABLE ONLY public.zones
 
 ALTER TABLE ONLY public.branches
     ADD CONSTRAINT fk_rails_c975a54cff FOREIGN KEY (merchant_id) REFERENCES public.merchants(id);
+
+
+--
+-- Name: orders fk_rails_caba0da8d5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_caba0da8d5 FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id);
 
 
 --
@@ -2550,6 +3221,14 @@ ALTER TABLE ONLY public.categories
 
 
 --
+-- Name: courier_documents fk_rails_e15cf3b85a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.courier_documents
+    ADD CONSTRAINT fk_rails_e15cf3b85a FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
+
+
+--
 -- Name: service_areas fk_rails_e21f04d993; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2579,6 +3258,22 @@ ALTER TABLE ONLY public.order_items
 
 ALTER TABLE ONLY public.role_assignments
     ADD CONSTRAINT fk_rails_e4bfc1cd2c FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: dispatch_offers fk_rails_e60c2d14ea; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dispatch_offers
+    ADD CONSTRAINT fk_rails_e60c2d14ea FOREIGN KEY (courier_id) REFERENCES public.couriers(id);
+
+
+--
+-- Name: couriers fk_rails_e99d87c839; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.couriers
+    ADD CONSTRAINT fk_rails_e99d87c839 FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
 --
@@ -2628,6 +3323,17 @@ ALTER TABLE ONLY public.cart_items
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260820012557'),
+('20260820005826'),
+('20260820005824'),
+('20260820005822'),
+('20260820005820'),
+('20260820005818'),
+('20260820005524'),
+('20260820005522'),
+('20260820005520'),
+('20260820005519'),
+('20260820005517'),
 ('20260819234846'),
 ('20260819234845'),
 ('20260819234843'),

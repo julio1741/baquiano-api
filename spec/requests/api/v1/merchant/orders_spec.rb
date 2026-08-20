@@ -27,7 +27,7 @@ RSpec.describe "Merchant order handling", type: :request do
     expect(ids.size).to eq(1)
   end
 
-  it "walks an order through accept -> preparing -> ready_for_pickup" do
+  it "walks an order through accept -> preparing -> ready_for_pickup -> courier_search" do
     order = create(:order, branch: branch, current_status: "merchant_pending")
 
     post "/api/v1/merchant/orders/#{order.id}/accept", headers: staff_headers
@@ -37,8 +37,12 @@ RSpec.describe "Merchant order handling", type: :request do
     post "/api/v1/merchant/orders/#{order.id}/start_preparing", headers: staff_headers
     expect(response.parsed_body["current_status"]).to eq("preparing")
 
+    # No couriers online for this branch, so the delivery search comes up
+    # empty and the order simply waits in courier_search — see
+    # Deliveries::CreateForOrder.
     post "/api/v1/merchant/orders/#{order.id}/mark_ready", headers: staff_headers
-    expect(response.parsed_body["current_status"]).to eq("ready_for_pickup")
+    expect(response.parsed_body["current_status"]).to eq("courier_search")
+    expect(order.reload.delivery.status).to eq("pending_assignment")
   end
 
   it "rejects an order with a reason" do

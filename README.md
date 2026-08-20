@@ -166,5 +166,39 @@ para lo pendiente (estados de courier/pago fuera de alcance, `delivery_id`
 sin FK todavía, sin scheduler configurado para los jobs de mantenimiento).
 119 tests en total.
 
-Los dominios de negocio restantes (Payments, Dispatch, ...) se agregan en
-los incrementos siguientes.
+**Incremento 5** (Logística): `Courier`/`Vehicle`/`CourierDocument`/
+`CourierAvailability`/`CourierBranchAssignment` (repartidores propios de
+Baquiano o de un comercio, teléfono y datos de placa/documento cifrados +
+digest igual que el resto de la app). `Delivery` protegido con el mismo
+patrón que `Order` (`before_update` + `Deliveries::TransitionDelivery`
+como único punto de cambio de estado), máquina de estados completa
+(`pending_assignment` → `offered` → `assigned`/`accepted` →
+`at_merchant` → `picked_up` → `en_route` → `at_customer` → `delivered` /
+`failed` / `cancelled`), con `Order` sincronizado en cada paso vía la
+misma tabla de transiciones extendida hasta `delivered`. `Dispatch::CreateOffers`
+ofrece la entrega a los repartidores en línea más cercanos (PostGIS
+`ST_Distance` sobre su último `LocationPing`, nunca aproximado en Ruby);
+`Dispatch::RespondToOffer` garantiza que solo una oferta gane la asignación
+mediante un índice único parcial (`status='accepted'` por `delivery_id`),
+verificado con un test de concurrencia real (hilos) además del caso
+secuencial. `Dispatch::ExpireOffersJob` vence ofertas sin respuesta y
+reintenta el despacho si a la entrega no le queda ninguna oferta viva.
+PIN de entrega: dígito verificado por digest (igual que OTP), pero también
+cifrado para que el cliente pueda volver a verlo en su pantalla de
+seguimiento — desviación deliberada del esquema literal de la sección 4.14,
+ver decisions.md. Endpoints repartidor (perfil, documentos, disponibilidad,
+ofertas, ejecución completa de la entrega, incidentes), admin (aprobación
+de repartidores y sus documentos, asignación manual, visibilidad de
+entregas) — con una separación explícita de autorización (`CourierPolicy#update?`
+vs `#manage?`) para que el propio token de un repartidor nunca pueda tocar
+campos de solo-admin vía la ruta de admin. Ver
+[`docs/architecture/decisions.md`](docs/architecture/decisions.md) para lo
+pendiente (algoritmo de despacho es un placeholder, ganancias/efectivo
+diferido a Payments, sin política de retención de ubicaciones, zonas de
+cobertura siguen sin API). 142 tests en total, incluyendo un walkthrough
+manual end-to-end completo (OTP real → onboarding → catálogo → pedido →
+despacho → entrega con PIN) que encontró y corrigió varios bugs invisibles
+para la suite automatizada (ver decisions.md).
+
+Los dominios de negocio restantes (Payments, Notifications, ...) se
+agregan en los incrementos siguientes.

@@ -204,3 +204,75 @@ are Geography-domain concerns, which Increment 5 already has scoped in
 (see `docs/architecture/domains.md`). Revisit there — likely as either a
 minimal coordinate-array admin endpoint or an explicit "console-managed for
 the MVP" decision, not silently left unaddressed.
+
+**Still not resolved in Increment 5** — logistics work (couriers/dispatch/
+deliveries) didn't touch coverage-area configuration; `Zone`/`ServiceArea`
+remain console-only. Pushed further out again; flagging so it doesn't get
+silently forgotten a third time.
+
+## Dispatch's courier-matching algorithm is a placeholder
+
+`Dispatch::CreateOffers` (Increment 5) ranks eligible couriers purely by
+distance from their most recent `LocationPing` to the pickup point —
+nearest online, approved courier wins the top offer slot, `CANDIDATE_LIMIT`
+(5) and `OFFER_TTL` (30 seconds) are made-up constants. Section 4.14 never
+specifies a real scoring algorithm beyond "score_snapshot: jsonb", so this
+isn't a validated dispatch policy — no acceptance-rate weighting, no
+courier rating, no fairness/rotation logic, no surge handling. Needs a real
+product/ops decision before this is anything more than a functional
+placeholder.
+
+## delivery_pin is also stored encrypted, not just as a digest
+
+Section 4.14's `deliveries` table only lists `delivery_pin_digest` — no
+encrypted counterpart, implying the PIN would be shown to the customer
+once (e.g. via a push notification at assignment time) and never
+retrievable from the server again. That doesn't hold up in practice: the
+customer needs to be able to re-check the PIN on their own tracking screen
+whenever the courier arrives, not just at the one moment it was generated,
+and there's no Notifications domain yet (Increment 7) to have delivered it
+any other way. `Delivery` (`app/models/delivery.rb`) adds
+`delivery_pin_encrypted` (Active Record Encryption, same as every other
+`*_encrypted`/`*_digest` pair in this codebase) alongside the digest —
+found and fixed via a live end-to-end walkthrough that discovered the PIN
+was never even being generated, let alone retrievable, so the entire
+PIN-confirmation flow was unusable as originally scoped. Revisit if a real
+Notifications channel makes a true show-once flow (matching the literal
+schema) preferable.
+
+## Courier self-service vs admin field authorization split
+
+`CourierPolicy` has two distinct authorization methods over the same
+`Courier` record — `update?` (self-service, `own_courier?` only) and
+`manage?` (admin-only, `organizations:manage`, no owner fallback) — instead
+of one shared method. This is load-bearing: `Authenticatable`
+(`app/controllers/concerns/authenticatable.rb`) authorizes purely by
+permission, not by which app namespace issued the access token, so a
+courier's own token can reach `/api/v1/admin/*` routes and would pass a
+shared `update?` via `own_courier?`. Caught before shipping by reasoning
+through the shared-policy design, not by a test failure — worth
+remembering for any future policy that backs both a self-service and an
+admin controller for the same model (`OrderPolicy`/`OrganizationPolicy`
+don't have this shape today, but a similar model might).
+
+## Courier earnings, cash handling, and settlements are out of scope
+
+Section 6's courier endpoint list includes "Consultar ganancias",
+"Registrar cobro", "Consultar efectivo pendiente" — none of these are
+built. They depend on the Payments/Ledger domain (Increment 6:
+`cash_enabled`/`maximum_cash_exposure` already exist as columns on
+`Courier` but aren't used yet). `courier_branch_assignments` (a merchant's
+own fleet, as opposed to Baquiano-pooled couriers) also has no endpoint
+yet to actually create an assignment — `courier_type: "merchant"` couriers
+have no way to become eligible for a specific branch's deliveries through
+the API today.
+
+## Location ping retention/precision-reduction policy not implemented
+
+Section 4.14 calls for a retention policy and "reducción o eliminación de
+precisión después del período operacional" for `location_pings`. Neither
+exists — pings are stored indefinitely at full precision via
+`Deliveries::RecordLocationPing`. Needs a real decision on retention
+window and whether/how to degrade precision before this goes near
+production, especially given this is exactly the kind of personal location
+data that data-protection rules tend to care about.

@@ -50,6 +50,31 @@ Rails.application.routes.draw do
         post "otp/verify", to: "otps#verify"
         post "session/refresh", to: "sessions#refresh"
         delete "session", to: "sessions#destroy"
+
+        resource :courier, only: %i[show create update], controller: "couriers", path: "profile"
+        resources :vehicles, only: %i[create update]
+        resources :courier_documents, only: %i[index create]
+        resources :availabilities, only: [ :create ]
+        resources :location_pings, only: [ :create ]
+
+        resources :dispatch_offers, only: [ :index ] do
+          member do
+            post :accept
+            post :reject
+          end
+        end
+
+        resources :deliveries, only: %i[index show] do
+          resources :delivery_incidents, only: [ :create ]
+
+          member do
+            post :arrive_at_merchant
+            post :confirm_pickup
+            post :arrive_at_customer
+            post :confirm_delivery
+            post :fail_delivery
+          end
+        end
       end
 
       namespace :merchant do
@@ -107,6 +132,26 @@ Rails.application.routes.draw do
           end
         end
         resources :orders, only: %i[index show]
+
+        resources :couriers, only: %i[index show update] do
+          member do
+            post :approve
+            post :reject
+            post :suspend
+          end
+          resources :vehicles, only: [ :index ]
+          resources :courier_documents, only: [ :index ]
+        end
+        resources :vehicles, only: [ :update ]
+        resources :courier_documents, only: [] do
+          member do
+            post :approve
+            post :reject
+          end
+        end
+        resources :deliveries, only: %i[index show] do
+          post :assign, on: :member
+        end
       end
     end
   end

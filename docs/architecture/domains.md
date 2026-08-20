@@ -51,8 +51,10 @@ Increment 3 once the model existed alongside `Api::V1::Customer` — avoided
 there by never referencing the bare model from inside `Api::V1::Customer::*`
 controllers, only through associations (`current_user.customer`,
 `current_customer.addresses`). `::Customer` would still be needed by any
-code that does `Customer.find(...)` or similar from in there. `Courier`
-(Increment 5) will need the same care.
+code that does `Customer.find(...)` or similar from in there. Confirmed a
+third time for `Courier` (Increment 5) — `Api::V1::Courier::CouriersController`
+and `Api::V1::Admin::CouriersController` both spell it `::Courier`
+throughout.
 
 Domains are added incrementally, one per implementation increment (section 14
 of the master prompt) — folders are only created once they hold real code, to

@@ -21,19 +21,22 @@ module Api
         end
 
         def accept
-          transition(to_status: "merchant_accepted")
+          render json: order_body(transition(to_status: "merchant_accepted").reload)
         end
 
         def reject
-          transition(to_status: "merchant_rejected", reason_code: params[:reason_code], notes: params[:notes])
+          order = transition(to_status: "merchant_rejected", reason_code: params[:reason_code], notes: params[:notes])
+          render json: order_body(order.reload)
         end
 
         def start_preparing
-          transition(to_status: "preparing")
+          render json: order_body(transition(to_status: "preparing").reload)
         end
 
         def mark_ready
-          transition(to_status: "ready_for_pickup")
+          order = transition(to_status: "ready_for_pickup")
+          Deliveries::CreateForOrder.call(order: order)
+          render json: order_body(order.reload)
         end
 
         private
@@ -46,7 +49,7 @@ module Api
             order: order, to_status: to_status, actor_type: "merchant_staff", actor_user: current_user,
             reason_code: reason_code, notes: notes, idempotency_key: params[:idempotency_key]
           )
-          render json: order_body(order.reload)
+          order
         end
 
         def order_body(order)

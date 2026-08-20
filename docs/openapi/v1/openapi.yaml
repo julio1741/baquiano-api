@@ -334,6 +334,12 @@ components:
         customer_notes: { type: string, nullable: true }
         cancellation_reason_code: { type: string, nullable: true }
         placed_at: { type: string, format: date-time }
+        delivery_pin:
+          type: string
+          nullable: true
+          description: >
+            Present once a Delivery exists for this order — the customer
+            reads this out to the courier to confirm delivery.
         items:
           type: array
           items: { $ref: "#/components/schemas/OrderItem" }
@@ -357,6 +363,82 @@ components:
         actor_user_id: { type: string, format: uuid, nullable: true }
         reason_code: { type: string, nullable: true }
         occurred_at: { type: string, format: date-time }
+
+    Courier:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        courier_type: { type: string, enum: [baquiano, merchant] }
+        status: { type: string, enum: [pending, active, suspended] }
+        approval_status: { type: string, enum: [pending, approved, rejected] }
+        risk_level: { type: string }
+        cash_enabled: { type: boolean }
+        approved_at: { type: string, format: date-time, nullable: true }
+        suspended_at: { type: string, format: date-time, nullable: true }
+        suspension_reason: { type: string, nullable: true }
+
+    Vehicle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        vehicle_type: { type: string, enum: [motorcycle, bicycle, car, walking, other] }
+        brand: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        active: { type: boolean }
+
+    CourierDocument:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        document_type: { type: string }
+        status: { type: string, enum: [pending, approved, rejected] }
+        expires_at: { type: string, format: date-time, nullable: true }
+        rejection_reason: { type: string, nullable: true }
+
+    DispatchOffer:
+      type: object
+      description: >
+        score_snapshot is a placeholder MVP scoring policy (nearest online
+        courier by their last location ping) — not a validated dispatch
+        algorithm, see docs/architecture/decisions.md.
+      properties:
+        id: { type: string, format: uuid }
+        delivery_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, accepted, rejected, expired, cancelled] }
+        offered_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        score_snapshot: { type: object }
+
+    Delivery:
+      type: object
+      description: >
+        status only ever changes through Deliveries::TransitionDelivery,
+        which also keeps the parent Order's current_status in lockstep
+        (section 5 of the spec's transition matrix).
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending_assignment, offered, assigned, accepted, at_merchant, picked_up, en_route, at_customer,
+                 delivered, failed, cancelled]
+        pickup_location: { $ref: "#/components/schemas/GeoPoint" }
+        dropoff_location: { $ref: "#/components/schemas/GeoPoint" }
+        assigned_at: { type: string, format: date-time, nullable: true }
+        accepted_at: { type: string, format: date-time, nullable: true }
+        arrived_at_merchant_at: { type: string, format: date-time, nullable: true }
+        picked_up_at: { type: string, format: date-time, nullable: true }
+        arrived_at_customer_at: { type: string, format: date-time, nullable: true }
+        delivered_at: { type: string, format: date-time, nullable: true }
+        failed_at: { type: string, format: date-time, nullable: true }
+        failure_reason: { type: string, nullable: true }
+
+    GeoPoint:
+      type: object
+      properties:
+        latitude: { type: number, format: double }
+        longitude: { type: number, format: double }
 
   parameters:
     role_assignment_reason:
@@ -1554,3 +1636,542 @@ paths:
                         type: array
                         items: { $ref: "#/components/schemas/OrderStatusHistoryEntry" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/courier/profile:
+    get:
+      summary: Show my courier profile
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Courier" } } } }
+    post:
+      summary: Complete my courier profile (self-registration)
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Courier" }
+    patch:
+      summary: Update my courier profile (courier_type only — risk_level/cash_enabled are admin-only)
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Courier" } } } }
+
+  /api/v1/courier/vehicles:
+    post:
+      summary: Register a vehicle
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Vehicle" }
+
+  /api/v1/courier/vehicles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Update one of my vehicles
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
+
+  /api/v1/courier/courier_documents:
+    get:
+      summary: List my submitted documents
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CourierDocument" } }
+    post:
+      summary: Submit a document for review
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourierDocument" }
+
+  /api/v1/courier/availabilities:
+    post:
+      summary: Change my availability (online/offline/paused/busy)
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { type: string, enum: [online, offline, paused, busy] }
+                zone_id: { type: string, format: uuid }
+              required: [status]
+      responses:
+        "201": { description: Created }
+
+  /api/v1/courier/location_pings:
+    post:
+      summary: Send a location update
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                latitude: { type: number, format: double }
+                longitude: { type: number, format: double }
+                device_recorded_at: { type: string, format: date-time }
+                source: { type: string, example: gps }
+                accuracy_meters: { type: number }
+                speed_meters_per_second: { type: number }
+                heading_degrees: { type: number }
+              required: [latitude, longitude]
+      responses:
+        "201": { description: Created }
+
+  /api/v1/courier/dispatch_offers:
+    get:
+      summary: List my pending, unexpired dispatch offers
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/DispatchOffer" } }
+
+  /api/v1/courier/dispatch_offers/{id}/accept:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Accept a dispatch offer
+      description: >
+        Only one courier can ever win a delivery's assignment — a
+        unique partial index plus row locking guarantee this under real
+        concurrency (see docs/architecture/decisions.md).
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DispatchOffer" }
+        "409":
+          description: The offer expired, or another courier already won this delivery
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/courier/dispatch_offers/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Reject a dispatch offer
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejection_reason: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DispatchOffer" }
+
+  /api/v1/courier/deliveries:
+    get:
+      summary: List my deliveries (active and past)
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+
+  /api/v1/courier/deliveries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show one of my deliveries
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+
+  /api/v1/courier/deliveries/{id}/arrive_at_merchant:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Mark arrival at the merchant
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+
+  /api/v1/courier/deliveries/{id}/confirm_pickup:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Confirm pickup (delivery moves straight to en_route — no separate "start route" step)
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+
+  /api/v1/courier/deliveries/{id}/arrive_at_customer:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Mark arrival at the customer
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+
+  /api/v1/courier/deliveries/{id}/confirm_delivery:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Confirm delivery with the customer's PIN
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pin: { type: string, example: "4821" }
+              required: [pin]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+        "422":
+          description: PIN does not match (error.code delivery_pin_mismatch)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/courier/deliveries/{id}/fail_delivery:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Report the delivery as failed
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                failure_reason: { type: string }
+              required: [failure_reason]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+
+  /api/v1/courier/deliveries/{delivery_id}/delivery_incidents:
+    parameters:
+      - name: delivery_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Report an incident on this delivery
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                incident_type: { type: string }
+                severity: { type: string, enum: [low, medium, high] }
+                description: { type: string }
+              required: [incident_type, description]
+      responses:
+        "201": { description: Created }
+
+  /api/v1/admin/couriers:
+    get:
+      summary: List couriers, optionally filtered by approval_status
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: approval_status
+          in: query
+          schema: { type: string, enum: [pending, approved, rejected] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Courier" } }
+
+  /api/v1/admin/couriers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a courier
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Courier" } } } }
+    patch:
+      summary: Update admin-only courier fields (organization_id, risk_level, cash_enabled, maximum_cash_exposure)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Courier" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/couriers/{id}/approve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Approve a courier (approval_status -> approved, status -> active)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Courier" } } } }
+
+  /api/v1/admin/couriers/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Reject a courier
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Courier" } } } }
+
+  /api/v1/admin/couriers/{id}/suspend:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Suspend a courier
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Courier" } } } }
+
+  /api/v1/admin/couriers/{courier_id}/vehicles:
+    parameters:
+      - name: courier_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List a courier's vehicles
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Vehicle" } }
+
+  /api/v1/admin/vehicles/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Update a vehicle (e.g. deactivate it)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Vehicle" } } } }
+
+  /api/v1/admin/couriers/{courier_id}/courier_documents:
+    parameters:
+      - name: courier_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List a courier's submitted documents
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/CourierDocument" } }
+
+  /api/v1/admin/courier_documents/{id}/approve:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Approve a courier document
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourierDocument" }
+
+  /api/v1/admin/courier_documents/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Reject a courier document
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rejection_reason: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CourierDocument" }
+
+  /api/v1/admin/deliveries:
+    get:
+      summary: List deliveries, optionally filtered by status
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Delivery" } }
+
+  /api/v1/admin/deliveries/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a delivery
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
+
+  /api/v1/admin/deliveries/{id}/assign:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Force-assign a courier to a delivery (courier still must confirm via their own accept flow)
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                courier_id: { type: string, format: uuid }
+              required: [courier_id]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Delivery" } } } }
