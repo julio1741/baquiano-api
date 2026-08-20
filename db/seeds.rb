@@ -36,15 +36,15 @@ permissions_by_code.each_value do |permission|
 end
 
 # Organization-scoped role for a merchant's own staff: can manage their
-# branch(es) — pause/resume, hours, catalog, availability — but not other
-# merchants, organizations, users or anything financial.
+# branch(es) — pause/resume, hours, catalog, availability, incoming orders —
+# but not other merchants, organizations, users or anything financial.
 merchant_owner = Role.find_or_create_by!(code: "merchant_owner") do |role|
   role.name = "Merchant Owner"
   role.scope_type = "organization"
   role.system_role = true
 end
 
-%w[branches:manage catalog:manage availability:manage].each do |code|
+%w[branches:manage catalog:manage availability:manage orders:read orders:update_status].each do |code|
   RolePermission.find_or_create_by!(role: merchant_owner, permission: permissions_by_code.fetch(code))
 end
 

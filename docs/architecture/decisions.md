@@ -150,3 +150,57 @@ and `Identity::PurgeExpiredOtpChallengesJob` before it) is a plain
 `.perform_later` on a schedule. Needs a periodic job scheduler (e.g.
 sidekiq-cron, or an external cron hitting a rake task) configured before
 any of these three jobs actually run outside of manual/test invocation.
+
+## Two bugs found by a live end-to-end walkthrough, invisible to the request spec suite
+
+After Increment 4 shipped, a manual curl-driven walkthrough of the full
+customer → merchant journey against the running dev server (not RSpec)
+surfaced two real defects that every request spec had silently worked
+around via factories:
+
+1. **`Api::V1::Admin::OrganizationsController#organization_params` never
+   permitted `:status`** (merchant/branch controllers already did), so a
+   real admin had no way to move an organization out of `pending` — only
+   `Organization.new`'s DB default, never touched by a real request. Fixed
+   by adding `:status` to the permitted params, with a new request spec
+   (`organizations_merchants_branches_spec.rb`) asserting it. Every
+   existing organization spec used `create(:organization)` directly, which
+   never exercises `update` with a `status` param, so this went uncaught.
+
+2. **`db/seeds.rb`'s `merchant_owner` role template was never granted
+   `orders:read`/`orders:update_status`** — both permission codes existed
+   in the seed `PERMISSIONS` list since Increment 1, but Increment 4's
+   `RolePolicy`/`OrderPolicy` staff checks were never wired into the one
+   role real merchant staff actually get assigned. A merchant correctly
+   onboarded and assigned `merchant_owner` could not accept, reject,
+   prepare, or mark ready any of their own orders. Every merchant order
+   spec built its own one-off role + permission via factories
+   (`create(:role, code: "merchant_owner")` + a hand-picked
+   `role_permission`), so the seed template's actual contents were never
+   exercised. Fixed by adding both codes to the `merchant_owner` grant list
+   in `db/seeds.rb`.
+
+Neither bug could have been caught by the request spec suite as written,
+since specs construct roles/permissions/organizations directly with
+FactoryBot rather than going through the real admin bootstrap → activate →
+assign-role flow a production operator would use. Worth keeping in mind
+for future increments: request specs verify the *application* logic, not
+that the *seeded reference data* (roles, permission grants, default
+statuses) actually lets a real operator reach that logic.
+
+## Zone/ServiceArea have no admin API — coverage areas are console/seed-only
+
+The same live walkthrough found that a branch created entirely through the
+real admin API (organization → merchant → branch → catalog, all of which
+now work end-to-end) still never appears in `/api/v1/customer/coverage`
+without a `ServiceArea` row linking it to a `City`/geometry — and there is
+no controller or route for `service_areas` (or `zones`) at all; both are
+seed/console-only today (mirroring the already-documented "Barinas zone
+geometry is a placeholder" decision). Deliberately not treated as an
+Increment-4-blocking bug and not patched with an ad-hoc endpoint: polygon
+geometry is awkward to manage via a raw JSON API (a real admin tool would
+want map-drawing, not coordinate arrays over curl), and `Zone`/`ServiceArea`
+are Geography-domain concerns, which Increment 5 already has scoped in
+(see `docs/architecture/domains.md`). Revisit there — likely as either a
+minimal coordinate-array admin endpoint or an explicit "console-managed for
+the MVP" decision, not silently left unaddressed.

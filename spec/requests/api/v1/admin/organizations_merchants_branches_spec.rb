@@ -35,6 +35,16 @@ RSpec.describe "Admin organizations, merchants and branches", type: :request do
                                                        as: :json
       expect(response.parsed_body["display_name"]).to eq("Nuevo Nombre")
     end
+
+    it "activates a pending organization" do
+      organization = create(:organization)
+      expect(organization.status).to eq("pending")
+
+      patch "/api/v1/admin/organizations/#{organization.id}", params: { status: "active" }, headers: admin_headers,
+                                                                as: :json
+
+      expect(response.parsed_body["status"]).to eq("active")
+    end
   end
 
   describe "merchants" do

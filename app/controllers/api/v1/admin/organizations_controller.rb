@@ -39,7 +39,7 @@ module Api
         private
 
         def organization_params
-          params.permit(:legal_name, :display_name, :organization_type, :default_currency,
+          params.permit(:legal_name, :display_name, :organization_type, :default_currency, :status,
                         :tax_identifier, :contact_phone, :contact_email, :onboarding_status)
         end
 
