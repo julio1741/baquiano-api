@@ -28,9 +28,15 @@ class ApplicationController < ActionController::API
     render json: error_body("internal_error", "Something went wrong"), status: :internal_server_error
   end
 
+  UUID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
+
   def set_current_request_details
     Current.request_id = request.request_id
-    Current.correlation_id = request.headers["X-Correlation-ID"].presence || SecureRandom.uuid
+    client_correlation_id = request.headers["X-Correlation-ID"].presence
+    # Domain events store this in a real `uuid` column (Events::Publish), so
+    # a client sending a non-UUID value can't be trusted as-is.
+    Current.correlation_id =
+      (client_correlation_id if client_correlation_id&.match?(UUID_FORMAT)) || SecureRandom.uuid
     response.set_header("X-Correlation-Id", Current.correlation_id)
   end
 

@@ -296,6 +296,24 @@ CREATE TABLE public.devices (
 
 
 --
+-- Name: domain_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.domain_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    aggregate_type character varying NOT NULL,
+    aggregate_id uuid NOT NULL,
+    event_type character varying NOT NULL,
+    event_version integer DEFAULT 1 NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    correlation_id uuid NOT NULL,
+    causation_id uuid,
+    created_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: exchange_rates; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -403,6 +421,139 @@ CREATE TABLE public.modifiers (
 
 
 --
+-- Name: order_item_modifiers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_item_modifiers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    order_item_id uuid NOT NULL,
+    source_modifier_id uuid,
+    modifier_group_name_snapshot character varying NOT NULL,
+    modifier_name_snapshot character varying NOT NULL,
+    quantity integer DEFAULT 1 NOT NULL,
+    unit_price_amount bigint NOT NULL,
+    total_amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT order_item_modifiers_quantity_positive CHECK ((quantity > 0))
+);
+
+
+--
+-- Name: order_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    order_id uuid NOT NULL,
+    source_product_id uuid,
+    source_variant_id uuid,
+    sku_snapshot character varying NOT NULL,
+    name_snapshot character varying NOT NULL,
+    description_snapshot character varying,
+    variant_name_snapshot character varying,
+    quantity integer NOT NULL,
+    unit_price_amount bigint NOT NULL,
+    tax_amount bigint DEFAULT 0 NOT NULL,
+    discount_amount bigint DEFAULT 0 NOT NULL,
+    line_total_amount bigint NOT NULL,
+    currency character varying NOT NULL,
+    notes character varying,
+    product_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT order_items_line_total_non_negative CHECK ((line_total_amount >= 0)),
+    CONSTRAINT order_items_quantity_positive CHECK ((quantity > 0))
+);
+
+
+--
+-- Name: order_status_histories; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_status_histories (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    order_id uuid NOT NULL,
+    from_status character varying,
+    to_status character varying NOT NULL,
+    actor_user_id uuid,
+    actor_type character varying NOT NULL,
+    reason_code character varying,
+    notes character varying,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: order_transition_requests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.order_transition_requests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    order_id uuid NOT NULL,
+    requested_transition character varying NOT NULL,
+    requested_by_user_id uuid NOT NULL,
+    idempotency_key character varying NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    failure_code character varying,
+    failure_message character varying,
+    processed_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: orders; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.orders (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    public_number character varying NOT NULL,
+    customer_id uuid NOT NULL,
+    organization_id uuid NOT NULL,
+    merchant_id uuid NOT NULL,
+    branch_id uuid NOT NULL,
+    address_id uuid NOT NULL,
+    quote_id uuid NOT NULL,
+    delivery_id uuid,
+    current_status character varying DEFAULT 'placed'::character varying NOT NULL,
+    payment_status character varying NOT NULL,
+    fulfillment_type character varying DEFAULT 'delivery'::character varying NOT NULL,
+    delivery_model character varying NOT NULL,
+    currency character varying NOT NULL,
+    subtotal_amount bigint NOT NULL,
+    discount_amount bigint DEFAULT 0 NOT NULL,
+    tax_amount bigint DEFAULT 0 NOT NULL,
+    delivery_fee_amount bigint DEFAULT 0 NOT NULL,
+    service_fee_amount bigint DEFAULT 0 NOT NULL,
+    total_amount bigint NOT NULL,
+    exchange_rate_id uuid,
+    exchange_rate_value numeric(20,10),
+    customer_notes character varying,
+    merchant_notes character varying,
+    placed_at timestamp with time zone NOT NULL,
+    merchant_accepted_at timestamp with time zone,
+    ready_at timestamp with time zone,
+    picked_up_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    cancelled_at timestamp with time zone,
+    cancellation_reason_code character varying,
+    cancellation_notes character varying,
+    pricing_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    address_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    merchant_snapshot jsonb DEFAULT '{}'::jsonb NOT NULL,
+    idempotency_key character varying NOT NULL,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL,
+    CONSTRAINT orders_subtotal_amount_non_negative CHECK ((subtotal_amount >= 0)),
+    CONSTRAINT orders_total_amount_non_negative CHECK ((total_amount >= 0))
+);
+
+
+--
 -- Name: organizations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -446,6 +597,26 @@ CREATE TABLE public.otp_challenges (
     updated_at timestamp(6) with time zone NOT NULL,
     CONSTRAINT otp_challenges_attempt_count_non_negative CHECK ((attempt_count >= 0)),
     CONSTRAINT otp_challenges_maximum_attempts_positive CHECK ((maximum_attempts > 0))
+);
+
+
+--
+-- Name: outbox_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.outbox_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    event_type character varying NOT NULL,
+    aggregate_type character varying NOT NULL,
+    aggregate_id uuid NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    available_at timestamp with time zone NOT NULL,
+    published_at timestamp with time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    last_error character varying,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -845,6 +1016,14 @@ ALTER TABLE ONLY public.devices
 
 
 --
+-- Name: domain_events domain_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.domain_events
+    ADD CONSTRAINT domain_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: exchange_rates exchange_rates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -885,6 +1064,46 @@ ALTER TABLE ONLY public.modifiers
 
 
 --
+-- Name: order_item_modifiers order_item_modifiers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_item_modifiers
+    ADD CONSTRAINT order_item_modifiers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_items order_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_items
+    ADD CONSTRAINT order_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_status_histories order_status_histories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_status_histories
+    ADD CONSTRAINT order_status_histories_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: order_transition_requests order_transition_requests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_transition_requests
+    ADD CONSTRAINT order_transition_requests_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: orders orders_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT orders_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: organizations organizations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -898,6 +1117,14 @@ ALTER TABLE ONLY public.organizations
 
 ALTER TABLE ONLY public.otp_challenges
     ADD CONSTRAINT otp_challenges_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: outbox_events outbox_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.outbox_events
+    ADD CONSTRAINT outbox_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -1018,6 +1245,13 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.zones
     ADD CONSTRAINT zones_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idx_on_order_id_idempotency_key_d8d7489422; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_order_id_idempotency_key_d8d7489422 ON public.order_transition_requests USING btree (order_id, idempotency_key);
 
 
 --
@@ -1224,6 +1458,27 @@ CREATE UNIQUE INDEX index_devices_on_user_id_and_installation_id ON public.devic
 
 
 --
+-- Name: index_domain_events_on_aggregate_type_and_aggregate_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_domain_events_on_aggregate_type_and_aggregate_id ON public.domain_events USING btree (aggregate_type, aggregate_id);
+
+
+--
+-- Name: index_domain_events_on_correlation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_domain_events_on_correlation_id ON public.domain_events USING btree (correlation_id);
+
+
+--
+-- Name: index_domain_events_on_event_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_domain_events_on_event_type ON public.domain_events USING btree (event_type);
+
+
+--
 -- Name: index_exchange_rates_on_created_by_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1315,6 +1570,146 @@ CREATE INDEX index_modifiers_on_modifier_group_id ON public.modifiers USING btre
 
 
 --
+-- Name: index_order_item_modifiers_on_order_item_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_item_modifiers_on_order_item_id ON public.order_item_modifiers USING btree (order_item_id);
+
+
+--
+-- Name: index_order_item_modifiers_on_source_modifier_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_item_modifiers_on_source_modifier_id ON public.order_item_modifiers USING btree (source_modifier_id);
+
+
+--
+-- Name: index_order_items_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_items_on_order_id ON public.order_items USING btree (order_id);
+
+
+--
+-- Name: index_order_items_on_source_product_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_items_on_source_product_id ON public.order_items USING btree (source_product_id);
+
+
+--
+-- Name: index_order_items_on_source_variant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_items_on_source_variant_id ON public.order_items USING btree (source_variant_id);
+
+
+--
+-- Name: index_order_status_histories_on_actor_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_status_histories_on_actor_user_id ON public.order_status_histories USING btree (actor_user_id);
+
+
+--
+-- Name: index_order_status_histories_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_status_histories_on_order_id ON public.order_status_histories USING btree (order_id);
+
+
+--
+-- Name: index_order_status_histories_on_order_id_and_occurred_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_status_histories_on_order_id_and_occurred_at ON public.order_status_histories USING btree (order_id, occurred_at);
+
+
+--
+-- Name: index_order_transition_requests_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_transition_requests_on_order_id ON public.order_transition_requests USING btree (order_id);
+
+
+--
+-- Name: index_order_transition_requests_on_requested_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_order_transition_requests_on_requested_by_user_id ON public.order_transition_requests USING btree (requested_by_user_id);
+
+
+--
+-- Name: index_orders_on_address_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_address_id ON public.orders USING btree (address_id);
+
+
+--
+-- Name: index_orders_on_branch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_branch_id ON public.orders USING btree (branch_id);
+
+
+--
+-- Name: index_orders_on_current_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_current_status ON public.orders USING btree (current_status);
+
+
+--
+-- Name: index_orders_on_customer_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_customer_id ON public.orders USING btree (customer_id);
+
+
+--
+-- Name: index_orders_on_customer_id_and_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_orders_on_customer_id_and_idempotency_key ON public.orders USING btree (customer_id, idempotency_key);
+
+
+--
+-- Name: index_orders_on_exchange_rate_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_exchange_rate_id ON public.orders USING btree (exchange_rate_id);
+
+
+--
+-- Name: index_orders_on_merchant_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_merchant_id ON public.orders USING btree (merchant_id);
+
+
+--
+-- Name: index_orders_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_organization_id ON public.orders USING btree (organization_id);
+
+
+--
+-- Name: index_orders_on_public_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_orders_on_public_number ON public.orders USING btree (public_number);
+
+
+--
+-- Name: index_orders_on_quote_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_orders_on_quote_id ON public.orders USING btree (quote_id);
+
+
+--
 -- Name: index_organizations_on_organization_type; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1333,6 +1728,13 @@ CREATE INDEX index_organizations_on_status ON public.organizations USING btree (
 --
 
 CREATE UNIQUE INDEX index_organizations_on_tax_identifier_digest ON public.organizations USING btree (tax_identifier_digest) WHERE (tax_identifier_digest IS NOT NULL);
+
+
+--
+-- Name: index_outbox_events_on_status_and_available_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_outbox_events_on_status_and_available_at ON public.outbox_events USING btree (status, available_at);
 
 
 --
@@ -1660,11 +2062,27 @@ ALTER TABLE ONLY public.role_assignments
 
 
 --
+-- Name: order_transition_requests fk_rails_09f3923684; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_transition_requests
+    ADD CONSTRAINT fk_rails_09f3923684 FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: inventory_items fk_rails_0c6f012f57; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inventory_items
     ADD CONSTRAINT fk_rails_0c6f012f57 FOREIGN KEY (updated_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: orders fk_rails_1172a46d74; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_1172a46d74 FOREIGN KEY (branch_id) REFERENCES public.branches(id) ON DELETE RESTRICT;
 
 
 --
@@ -1700,6 +2118,30 @@ ALTER TABLE ONLY public.catalogs
 
 
 --
+-- Name: orders fk_rails_27f9662e04; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_27f9662e04 FOREIGN KEY (quote_id) REFERENCES public.quotes(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: order_items fk_rails_2a487acc86; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_items
+    ADD CONSTRAINT fk_rails_2a487acc86 FOREIGN KEY (source_product_id) REFERENCES public.products(id) ON DELETE SET NULL;
+
+
+--
+-- Name: order_status_histories fk_rails_2b161b5f6d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_status_histories
+    ADD CONSTRAINT fk_rails_2b161b5f6d FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: roles fk_rails_2f99738edd; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1713,6 +2155,14 @@ ALTER TABLE ONLY public.roles
 
 ALTER TABLE ONLY public.special_business_hours
     ADD CONSTRAINT fk_rails_300fdd3560 FOREIGN KEY (branch_id) REFERENCES public.branches(id);
+
+
+--
+-- Name: order_status_histories fk_rails_33cd1beb67; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_status_histories
+    ADD CONSTRAINT fk_rails_33cd1beb67 FOREIGN KEY (actor_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
 
 
 --
@@ -1740,11 +2190,27 @@ ALTER TABLE ONLY public.cart_item_modifiers
 
 
 --
+-- Name: orders fk_rails_3dad120da9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_3dad120da9 FOREIGN KEY (customer_id) REFERENCES public.customers(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: devices fk_rails_410b63ef65; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.devices
     ADD CONSTRAINT fk_rails_410b63ef65 FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: orders fk_rails_412cc65b8b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_412cc65b8b FOREIGN KEY (merchant_id) REFERENCES public.merchants(id) ON DELETE RESTRICT;
 
 
 --
@@ -1844,6 +2310,14 @@ ALTER TABLE ONLY public.user_identities
 
 
 --
+-- Name: orders fk_rails_6b4dec1eb6; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_6b4dec1eb6 FOREIGN KEY (exchange_rate_id) REFERENCES public.exchange_rates(id);
+
+
+--
 -- Name: cart_items fk_rails_6cdb1f0139; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1865,6 +2339,22 @@ ALTER TABLE ONLY public.sessions
 
 ALTER TABLE ONLY public.modifiers
     ADD CONSTRAINT fk_rails_769dcf7ebb FOREIGN KEY (modifier_group_id) REFERENCES public.modifier_groups(id);
+
+
+--
+-- Name: orders fk_rails_774ef80392; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_774ef80392 FOREIGN KEY (address_id) REFERENCES public.addresses(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: order_item_modifiers fk_rails_7e18c89050; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_item_modifiers
+    ADD CONSTRAINT fk_rails_7e18c89050 FOREIGN KEY (source_modifier_id) REFERENCES public.modifiers(id) ON DELETE SET NULL;
 
 
 --
@@ -1972,6 +2462,22 @@ ALTER TABLE ONLY public.categories
 
 
 --
+-- Name: order_items fk_rails_bc5a3dd2a0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_items
+    ADD CONSTRAINT fk_rails_bc5a3dd2a0 FOREIGN KEY (source_variant_id) REFERENCES public.product_variants(id) ON DELETE SET NULL;
+
+
+--
+-- Name: order_item_modifiers fk_rails_c123920f0e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_item_modifiers
+    ADD CONSTRAINT fk_rails_c123920f0e FOREIGN KEY (order_item_id) REFERENCES public.order_items(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: zones fk_rails_c25880e95e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2009,6 +2515,14 @@ ALTER TABLE ONLY public.addresses
 
 ALTER TABLE ONLY public.branches
     ADD CONSTRAINT fk_rails_d819cb9507 FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: order_transition_requests fk_rails_da92ebf28a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_transition_requests
+    ADD CONSTRAINT fk_rails_da92ebf28a FOREIGN KEY (requested_by_user_id) REFERENCES public.users(id) ON DELETE RESTRICT;
 
 
 --
@@ -2052,6 +2566,14 @@ ALTER TABLE ONLY public.delivery_fee_rules
 
 
 --
+-- Name: order_items fk_rails_e3cb28f071; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.order_items
+    ADD CONSTRAINT fk_rails_e3cb28f071 FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: role_assignments fk_rails_e4bfc1cd2c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2084,6 +2606,14 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: orders fk_rails_fe8af6535c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.orders
+    ADD CONSTRAINT fk_rails_fe8af6535c FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: cart_items fk_rails_ffa5d55b09; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2098,6 +2628,13 @@ ALTER TABLE ONLY public.cart_items
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260819234846'),
+('20260819234845'),
+('20260819234843'),
+('20260819234842'),
+('20260819234840'),
+('20260819234801'),
+('20260819234759'),
 ('20260819232136'),
 ('20260819232135'),
 ('20260819232133'),

@@ -37,7 +37,12 @@ Rails.application.routes.draw do
           resources :quotes, only: [ :create ]
         end
         resources :cart_items, only: %i[update destroy]
-        resources :quotes, only: [ :show ]
+        resources :quotes, only: [ :show ] do
+          resources :orders, only: [ :create ]
+        end
+        resources :orders, only: %i[index show] do
+          post "cancellation_request", to: "orders#request_cancellation", on: :member
+        end
       end
 
       namespace :courier do
@@ -60,6 +65,7 @@ Rails.application.routes.draw do
           end
           resources :catalogs, only: %i[index create]
           resources :inventory_items, only: %i[index create]
+          resources :orders, only: [ :index ]
         end
 
         resources :catalogs, only: %i[show update] do
@@ -71,6 +77,15 @@ Rails.application.routes.draw do
         resources :categories, only: %i[show update destroy]
         resources :products, only: %i[show update destroy]
         resources :inventory_items, only: [ :update ]
+
+        resources :orders, only: [ :show ] do
+          member do
+            post :accept
+            post :reject
+            post :start_preparing
+            post :mark_ready
+          end
+        end
       end
 
       namespace :admin do
@@ -91,6 +106,7 @@ Rails.application.routes.draw do
             post :resume
           end
         end
+        resources :orders, only: %i[index show]
       end
     end
   end

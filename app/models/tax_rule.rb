@@ -10,6 +10,14 @@ class TaxRule < ApplicationRecord
 
   validate :valid_until_after_valid_from
 
+  # Shared by Pricing::GenerateQuote and Orders::PlaceOrder so a line's tax
+  # is computed identically whether it's still on a quote or already
+  # snapshotted onto an order — only called when active?, so callers must
+  # still guard on that themselves.
+  def apply(amount)
+    (amount * rate_basis_points / 10_000.0).round
+  end
+
   private
 
   def valid_until_after_valid_from

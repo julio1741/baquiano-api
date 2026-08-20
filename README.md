@@ -138,5 +138,33 @@ la sucursal. Ver
 pendiente (tarifa de envío inventada, sin fee de servicio, sin conversión
 de moneda). 101 tests en total.
 
-Los dominios de negocio restantes (Orders, Payments, Dispatch, ...) se
-agregan en los incrementos siguientes.
+**Incremento 4** (Pedidos): `Order`/`OrderItem`/`OrderItemModifier`
+inmutables (snapshot completo del carrito al momento de crear el pedido,
+`readonly?` a nivel de modelo), `current_status` protegido por
+`before_update` — solo `Orders::TransitionOrder` puede cambiarlo, cualquier
+escritura directa aborta con `RecordNotSaved`. Máquina de estados con tabla
+de transiciones explícita (sección 5 del spec, hasta `ready_for_pickup` —
+courier/pago quedan para Dispatch/Payments), autorización por actor
+(cliente dueño, staff de comercio con permiso `orders:update_status`,
+"system" para procesos internos de confianza), idempotencia vía
+`OrderTransitionRequest` con registro de fallos fuera de la transacción
+principal para que sobrevivan a un rollback. `Orders::PlaceOrder` convierte
+`Quote` en `Order` sin recalcular nada, es idempotente por
+`(customer_id, idempotency_key)`, y arranca en `merchant_pending`.
+`Orders::RequestCancellation` distingue cancelación inmediata (antes de que
+el comercio acepte) de cancelación que requiere revisión (después).
+Eventos de dominio + outbox transaccional (`DomainEvent` + `OutboxEvent`,
+adelantado de la sección 4.18) para cada transición.
+`Orders::AutoCancelUnacceptedOrdersJob` cancela automáticamente pedidos
+atascados en `merchant_pending` tras 15 minutos. Endpoints cliente (crear
+desde cotización, listar/ver propios, solicitar cancelación), comercio
+(pedidos activos de la sucursal, aceptar/rechazar/preparar/marcar listo) y
+admin de solo lectura (listar todos los pedidos con filtros, ver detalle
+con historial de estados — sin acciones de reembolso/disputa, eso es
+Payments). Ver [`docs/architecture/decisions.md`](docs/architecture/decisions.md)
+para lo pendiente (estados de courier/pago fuera de alcance, `delivery_id`
+sin FK todavía, sin scheduler configurado para los jobs de mantenimiento).
+119 tests en total.
+
+Los dominios de negocio restantes (Payments, Dispatch, ...) se agregan en
+los incrementos siguientes.

@@ -55,7 +55,7 @@ module Pricing
       tax_rule = item.product.tax_rule
       return 0 unless tax_rule&.active?
 
-      (item.line_total * tax_rule.rate_basis_points / 10_000.0).round
+      tax_rule.apply(item.line_total)
     end
 
     def delivery_fee_for(address)

@@ -311,6 +311,53 @@ components:
         total_amount: { type: integer }
         expires_at: { type: string, format: date-time }
 
+    Order:
+      type: object
+      description: >
+        current_status only ever changes through Orders::TransitionOrder's
+        state machine (section 5 of the spec) — direct writes are rejected
+        at the model level.
+      properties:
+        id: { type: string, format: uuid }
+        public_number: { type: string, example: "BQ-20260819-AB12CD" }
+        current_status:
+          type: string
+          enum: [payment_pending, payment_review, placed, merchant_pending, merchant_accepted, merchant_rejected,
+                 preparing, ready_for_pickup, courier_search, courier_assigned, courier_at_merchant, picked_up,
+                 en_route, courier_at_customer, delivered, cancellation_requested, cancelled, delivery_failed,
+                 refund_pending, partially_refunded, refunded, disputed, closed]
+        payment_status: { type: string, enum: [pending, not_required, confirmed, refunded] }
+        fulfillment_type: { type: string, enum: [delivery, pickup] }
+        delivery_model: { type: string, enum: [baquiano, merchant, hybrid] }
+        currency: { type: string }
+        total_amount: { type: integer }
+        customer_notes: { type: string, nullable: true }
+        cancellation_reason_code: { type: string, nullable: true }
+        placed_at: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OrderItem" }
+
+    OrderItem:
+      type: object
+      description: An immutable snapshot of a cart item taken at order-placement time.
+      properties:
+        id: { type: string, format: uuid }
+        name_snapshot: { type: string }
+        variant_name_snapshot: { type: string, nullable: true }
+        quantity: { type: integer }
+        notes: { type: string, nullable: true }
+
+    OrderStatusHistoryEntry:
+      type: object
+      properties:
+        from_status: { type: string }
+        to_status: { type: string }
+        actor_type: { type: string, enum: [customer, merchant_staff, courier, system] }
+        actor_user_id: { type: string, format: uuid, nullable: true }
+        reason_code: { type: string, nullable: true }
+        occurred_at: { type: string, format: date-time }
+
   parameters:
     role_assignment_reason:
       name: reason
@@ -1282,4 +1329,228 @@ paths:
       security: [{ bearerAuth: [] }]
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Quote" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/customer/quotes/{quote_id}/orders:
+    parameters:
+      - name: quote_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Place an order from a quote (idempotent per customer+idempotency_key)
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Created (or the original order, if this idempotency_key was already used)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The quote has expired (error.code quote_expired)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/customer/orders:
+    get:
+      summary: List the current customer's own orders
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Order" } }
+
+  /api/v1/customer/orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show one of the current customer's own orders
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "404": { description: Not found (also returned for another customer's order) }
+
+  /api/v1/customer/orders/{id}/cancellation_request:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: >
+        Request cancellation. Cancels immediately before the merchant
+        accepts; moves to cancellation_requested (pending merchant/staff
+        review) afterwards.
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: The order can no longer be cancelled (error.code not_cancellable)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/merchant/branches/{branch_id}/orders:
+    parameters:
+      - name: branch_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: List the branch's active orders (merchant_pending through ready_for_pickup)
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Order" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show an order
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/merchant/orders/{id}/accept:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Accept the order
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Invalid transition from the order's current status (error.code invalid_transition) }
+
+  /api/v1/merchant/orders/{id}/reject:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Reject the order
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason_code: { type: string, example: out_of_stock }
+                notes: { type: string }
+              required: [reason_code]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422":
+          description: reason_code is required (error.code reason_code_required)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/merchant/orders/{id}/start_preparing:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Mark the order as being prepared
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Invalid transition from the order's current status (error.code invalid_transition) }
+
+  /api/v1/merchant/orders/{id}/mark_ready:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Mark the order ready for pickup
+      tags: [merchant]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Order" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { description: Invalid transition from the order's current status (error.code invalid_transition) }
+
+  /api/v1/admin/orders:
+    get:
+      summary: List every order platform-wide, optionally filtered by organization_id or status
+      description: Read-only. No admin action can force a status change — see docs/architecture/decisions.md.
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: organization_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Order" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/orders/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show an order with its full status history
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Order"
+                  - type: object
+                    properties:
+                      status_history:
+                        type: array
+                        items: { $ref: "#/components/schemas/OrderStatusHistoryEntry" }
         "403": { $ref: "#/components/responses/Forbidden" }

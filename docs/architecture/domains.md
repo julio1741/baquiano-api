@@ -63,10 +63,15 @@ avoid empty scaffolding:
 | 1 | Identity, AccessControl |
 | 2 | Organizations, Merchants, Catalog |
 | 3 | Customers, Carts, Pricing |
-| 4 | Orders |
+| 4 | Orders, Events |
 | 5 | Couriers, Dispatch, Deliveries, Geography |
 | 6 | Payments, Accounting, Reconciliation |
 | 7 | Notifications, Support, Risk, Audit, Configuration |
+
+`Events` (transactional outbox: `DomainEvent`/`OutboxEvent`,
+`Events::Publish`) was pulled forward into Increment 4 from section 4.18's
+original Increment 7 placement, since `Orders::TransitionOrder` needed a
+real event-emission mechanism from the start rather than a stub.
 
 Cross-cutting, non-domain code stays where Rails expects it:
 `app/controllers/api/v1/<customer|courier|merchant|admin|webhooks>`,

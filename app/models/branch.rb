@@ -12,6 +12,7 @@ class Branch < ApplicationRecord
   has_many :catalogs, dependent: :restrict_with_error
   has_many :inventory_items, dependent: :destroy
   has_many :role_assignments, dependent: :restrict_with_error
+  has_many :orders, dependent: :restrict_with_error
 
   enum :delivery_model, { baquiano: "baquiano", merchant: "merchant", hybrid: "hybrid" }, validate: true
   enum :status, { pending: "pending", active: "active", suspended: "suspended" }, validate: true

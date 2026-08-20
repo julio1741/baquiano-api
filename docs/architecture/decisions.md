@@ -94,3 +94,59 @@ branches) to block deletion while children exist. Whether a real
 organization should ever be *deletable* (versus only suspendable via
 `suspend!`) is a business decision this MVP hasn't made — flagging in case
 `destroy` should be removed in favor of suspend-only once that's decided.
+
+## Order state machine stops at ready_for_pickup; courier/payment states exist only as enum values
+
+`Orders::TransitionOrder::TRANSITIONS` (Increment 4) only wires up the
+transitions that don't depend on Dispatch or Payments:
+`placed → merchant_pending → merchant_accepted → preparing →
+ready_for_pickup`, plus cancellation up to that point. `current_status`'s
+enum already declares every later state from the spec's full lifecycle
+(`courier_search` through `closed`, plus `refund_pending`/`disputed`/etc.)
+so the column and validations are future-proof, but no rule in the table
+can reach them yet — that's Increment 5 (Dispatch) and Increment 6
+(Payments) work. An order that reaches `ready_for_pickup` today has no way
+to progress further through the API.
+
+## orders.delivery_id has no foreign key yet
+
+`db/migrate/*_create_orders.rb` adds a bare `uuid` column for `delivery_id`
+with no `references`/FK, since the `deliveries` table (Dispatch domain)
+doesn't exist yet. Needs a migration adding the real foreign key once
+Increment 5 creates that table.
+
+## payment_method's upfront-confirmation split is a guess, not a confirmed business rule
+
+`Orders::PlaceOrder::UPFRONT_CONFIRMATION_METHODS` (currently just
+`mobile_payment`) decides whether a new order starts in `payment_pending`
+(waiting for confirmation) versus going straight to `placed`. This mirrors
+the spec's description of `pago_movil` needing manual/external
+confirmation before an order is real, while `pos_on_delivery`/`cash` don't
+block placement — but the exact list of "which payment methods need
+upfront confirmation" hasn't been validated with product/finance and may
+need to grow (e.g. a future card-on-file method) or shrink.
+
+## "system" actor bypasses all transition authorization checks
+
+`Orders::TransitionOrder#authorize!` (`app/domains/orders/services/
+transition_order.rb`) skips every actor check when `actor_type: "system"`
+is passed, regardless of which rule's declared `actor:` would otherwise
+apply. This is what lets internal jobs — currently only
+`Orders::AutoCancelUnacceptedOrdersJob` — force a transition (e.g.
+`merchant_pending → cancelled`, a rule declared `actor: :customer`)
+without a customer or staff member actually present. `actor_type` is never
+taken from client input (controllers always pass a fixed string), so this
+is safe *today*, but it means any future code path that manages to call
+`TransitionOrder.call(actor_type: "system", ...)` gets unconditional
+authority over every order transition. Worth revisiting if that ever stops
+being true — e.g. by requiring an explicit allow-list of which transitions
+"system" may force, rather than blanket bypass.
+
+## No scheduler wired up for maintenance jobs yet
+
+`Orders::AutoCancelUnacceptedOrdersJob` (like `Carts::ExpireStaleCartsJob`
+and `Identity::PurgeExpiredOtpChallengesJob` before it) is a plain
+`ApplicationJob` with no recurring trigger — nothing currently calls
+`.perform_later` on a schedule. Needs a periodic job scheduler (e.g.
+sidekiq-cron, or an external cron hitting a rake task) configured before
+any of these three jobs actually run outside of manual/test invocation.

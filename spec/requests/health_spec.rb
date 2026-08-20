@@ -34,10 +34,17 @@ RSpec.describe "Health", type: :request do
       expect(response.headers["X-Correlation-Id"]).to be_present
     end
 
-    it "echoes back a client-supplied correlation id" do
-      get "/health/ready", headers: { "X-Correlation-ID" => "test-correlation-id" }
+    it "echoes back a client-supplied correlation id that is a valid UUID" do
+      get "/health/ready", headers: { "X-Correlation-ID" => "8a1e4b7c-6b7a-4b9a-9b3b-1f2e3d4c5b6a" }
 
-      expect(response.headers["X-Correlation-Id"]).to eq("test-correlation-id")
+      expect(response.headers["X-Correlation-Id"]).to eq("8a1e4b7c-6b7a-4b9a-9b3b-1f2e3d4c5b6a")
+    end
+
+    it "ignores a client-supplied correlation id that isn't a valid UUID" do
+      get "/health/ready", headers: { "X-Correlation-ID" => "not-a-uuid" }
+
+      expect(response.headers["X-Correlation-Id"]).not_to eq("not-a-uuid")
+      expect(response.headers["X-Correlation-Id"]).to be_present
     end
   end
 end
