@@ -44,7 +44,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-baquiano}"]
+      # -d is required: without it pg_isready defaults to a database named
+      # after the user ("baquiano"), which never exists (the real database
+      # is baquiano_development) — every poll before the app's own
+      # db:prepare creates it logs a harmless but alarming-looking
+      # "FATAL: database baquiano does not exist" in the db container.
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USERNAME:-baquiano} -d ${DATABASE_NAME:-baquiano_development}"]
       interval: 5s
       timeout: 5s
       retries: 10
