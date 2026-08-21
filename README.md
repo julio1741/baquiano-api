@@ -66,6 +66,13 @@ curl http://localhost:3001/health/ready  # 200 solo si Postgres y Redis responde
 
 Documentación de la API (solo en desarrollo): http://localhost:3001/api-docs
 
+¿Vas a integrar un frontend (app cliente/repartidor, portal de comercio o
+consola admin)? Empezá por
+[`docs/frontend-quickstart.md`](docs/frontend-quickstart.md) — explica el
+flujo de autenticación OTP paso a paso, el formato de errores, y las
+particularidades de cada rol antes de meterte en el detalle de cada
+endpoint (eso ya está en el OpenAPI/Swagger).
+
 ## Comandos comunes
 
 ```bash
