@@ -15,7 +15,11 @@ PERMISSIONS = [
   { resource: "organizations", action: "manage", description: "CRUD organizations, merchants and branches (admin)" },
   { resource: "branches", action: "manage", description: "Manage a branch's own settings (pause, hours, ...)" },
   { resource: "catalog", action: "manage", description: "Manage a branch's catalog (products, categories, modifiers)" },
-  { resource: "availability", action: "manage", description: "Manage a branch's product/variant availability" }
+  { resource: "availability", action: "manage", description: "Manage a branch's product/variant availability" },
+  { resource: "support", action: "manage", description: "Assign and transition support cases" },
+  { resource: "risk", action: "review", description: "Review fraud signals and risk decisions", sensitive: true },
+  { resource: "audit", action: "read", description: "View the audit log", sensitive: true },
+  { resource: "settings", action: "manage", description: "Manage system settings and feature flags", sensitive: true }
 ].freeze
 
 permissions_by_code = PERMISSIONS.map do |attrs|

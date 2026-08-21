@@ -28,6 +28,11 @@ module Payments
         next unless submission.submitted? || submission.under_review?
 
         submission.update!(duplicate_of_submission: original, review_status: "duplicate")
+        Risk::RecordSignal.call(
+          subject: submission.payment_intent.customer, signal_type: "duplicate_mobile_payment_reference",
+          score: 80.0, severity: "high", order: submission.payment_intent.order,
+          payment_intent: submission.payment_intent, evidence: { duplicate_of_submission_id: original.id }
+        )
       end
     end
   end

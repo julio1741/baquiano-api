@@ -583,6 +583,173 @@ components:
         handed_over_at: { type: string, format: date-time }
         confirmed_at: { type: string, format: date-time, nullable: true }
 
+    Notification:
+      type: object
+      description: >
+        provider is always "log" (Notifications::LogProvider) — no real
+        push/SMS/email integration exists yet (section 16).
+        destination_digest, not the raw phone/email/push token, per
+        section 4.15: "No incluir datos personales o detalles sensibles
+        innecesarios en push notifications."
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid, nullable: true }
+        channel: { type: string, enum: [push, sms, email, internal] }
+        template_code: { type: string }
+        status: { type: string, enum: [pending, sent, delivered, failed] }
+        sent_at: { type: string, format: date-time, nullable: true }
+
+    NotificationPreference:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        notification_type: { type: string }
+        push_enabled: { type: boolean }
+        sms_enabled: { type: boolean }
+        email_enabled: { type: boolean }
+
+    SupportCase:
+      type: object
+      description: >
+        The full admin view. status only ever changes through
+        Support::TransitionCase — direct writes are rejected at the model
+        level. See SupportCaseSummary for the smaller shape the
+        customer/courier endpoints expose.
+      properties:
+        id: { type: string, format: uuid }
+        public_number: { type: string }
+        category: { type: string }
+        priority: { type: string, enum: [low, medium, high, urgent] }
+        status:
+          type: string
+          enum: [open, in_progress, waiting_customer, waiting_merchant, waiting_courier, resolved, closed]
+        subject: { type: string }
+        description: { type: string }
+        resolution: { type: string, nullable: true }
+        opened_by_user_id: { type: string, format: uuid }
+        assigned_to_user_id: { type: string, format: uuid, nullable: true }
+        order_id: { type: string, format: uuid, nullable: true }
+        delivery_id: { type: string, format: uuid, nullable: true }
+        opened_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        closed_at: { type: string, format: date-time, nullable: true }
+
+    SupportCaseSummary:
+      type: object
+      description: The subset returned by the customer/courier support case endpoints.
+      properties:
+        id: { type: string, format: uuid }
+        public_number: { type: string }
+        category: { type: string }
+        priority: { type: string, enum: [low, medium, high, urgent] }
+        status:
+          type: string
+          enum: [open, in_progress, waiting_customer, waiting_merchant, waiting_courier, resolved, closed]
+        subject: { type: string }
+        resolution: { type: string, nullable: true }
+        opened_at: { type: string, format: date-time }
+
+    FraudSignal:
+      type: object
+      description: Append-only signal log — never updated after creation (section 4.17).
+      properties:
+        id: { type: string, format: uuid }
+        subject_type: { type: string }
+        subject_id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid, nullable: true }
+        payment_intent_id: { type: string, format: uuid, nullable: true }
+        signal_type: { type: string }
+        score: { type: number, format: double }
+        severity: { type: string, enum: [low, medium, high, critical] }
+        evidence: { type: object }
+        detected_at: { type: string, format: date-time }
+
+    RiskDecision:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        subject_type: { type: string }
+        subject_id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid, nullable: true }
+        decision:
+          type: string
+          enum: [allow, challenge, hold, manual_review, restrict_payment_method, reject, suspend]
+        risk_score: { type: number, format: double }
+        reasons: { type: object }
+        rules_version: { type: string }
+        reviewed_by_user_id: { type: string, format: uuid, nullable: true }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+
+    SystemSetting:
+      type: object
+      description: >
+        Append-only, versioned per (scope_type, scope_id, key) —
+        Configuration::SetSetting always inserts a new row with an
+        incremented version rather than updating one in place, so history
+        is never lost.
+      properties:
+        id: { type: string, format: uuid }
+        scope_type: { type: string }
+        scope_id: { type: string, format: uuid, nullable: true }
+        key: { type: string }
+        value:
+          description: The stored value — a string, number, boolean, or object, depending on value_type.
+        value_type: { type: string, enum: [string, integer, boolean, json] }
+        version: { type: integer }
+        effective_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time, nullable: true }
+
+    FeatureFlag:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        key: { type: string }
+        description: { type: string, nullable: true }
+        enabled: { type: boolean }
+        rules: { type: object }
+
+    AuditEvent:
+      type: object
+      description: >
+        Append-only (section 4.18: "La auditoría debe ser append-only") —
+        no updated_at, and never written directly except through
+        Audit::RecordEvent. The underlying table also stores a
+        change_details jsonb column (named that instead of the spec's
+        literal "changes" — ActiveRecord already defines a `changes`
+        instance method and raises DangerousAttributeError at model-load
+        time if a column shadows it); GET /admin/audit_events doesn't
+        currently return it, only metadata.
+      properties:
+        id: { type: string, format: uuid }
+        actor_user_id: { type: string, format: uuid, nullable: true }
+        actor_type: { type: string }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: string, format: uuid, nullable: true }
+        organization_id: { type: string, format: uuid, nullable: true }
+        branch_id: { type: string, format: uuid, nullable: true }
+        metadata: { type: object }
+        occurred_at: { type: string, format: date-time }
+
+    WebhookEvent:
+      type: object
+      description: >
+        Received via POST /api/v1/webhooks/{provider} and processed
+        idempotently by (provider, provider_event_id). The raw payload is
+        stored encrypted (payload_encrypted) and isn't exposed through any
+        API response.
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string }
+        provider_event_id: { type: string }
+        event_type: { type: string, nullable: true }
+        signature_valid: { type: boolean }
+        status: { type: string, enum: [received, processed, failed] }
+        received_at: { type: string, format: date-time }
+        processed_at: { type: string, format: date-time, nullable: true }
+        attempt_count: { type: integer }
+        last_error: { type: string, nullable: true }
+
   parameters:
     role_assignment_reason:
       name: reason
@@ -2916,3 +3083,541 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CashBalance" } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/customer/support_cases:
+    get:
+      summary: List my support cases
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SupportCaseSummary" } }
+    post:
+      summary: Open a support case
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category: { type: string }
+                subject: { type: string }
+                description: { type: string }
+                priority: { type: string, enum: [low, medium, high, urgent], description: Defaults to medium. }
+                order_id: { type: string, format: uuid, description: Must belong to the current customer. }
+              required: [category, subject, description]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportCaseSummary" }
+
+  /api/v1/customer/notifications:
+    get:
+      summary: List my notifications
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+
+  /api/v1/customer/notification_preferences:
+    get:
+      summary: List my notification preferences
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/NotificationPreference" } }
+
+  /api/v1/customer/notification_preferences/{notification_type}:
+    parameters:
+      - name: notification_type
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      summary: Update (or create) my preference for a notification type
+      tags: [customer]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                push_enabled: { type: boolean }
+                sms_enabled: { type: boolean }
+                email_enabled: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreference" }
+
+  /api/v1/courier/support_cases:
+    get:
+      summary: List my support cases
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SupportCaseSummary" } }
+    post:
+      summary: Open a support case
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                category: { type: string }
+                subject: { type: string }
+                description: { type: string }
+                priority: { type: string, enum: [low, medium, high, urgent], description: Defaults to medium. }
+                delivery_id: { type: string, format: uuid, description: Must belong to the current courier. }
+              required: [category, subject, description]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportCaseSummary" }
+
+  /api/v1/courier/notifications:
+    get:
+      summary: List my notifications
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+
+  /api/v1/courier/notification_preferences:
+    get:
+      summary: List my notification preferences
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/NotificationPreference" } }
+
+  /api/v1/courier/notification_preferences/{notification_type}:
+    parameters:
+      - name: notification_type
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      summary: Update (or create) my preference for a notification type
+      tags: [courier]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                push_enabled: { type: boolean }
+                sms_enabled: { type: boolean }
+                email_enabled: { type: boolean }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationPreference" }
+
+  /api/v1/admin/support_cases:
+    get:
+      summary: List support cases, optionally filtered by status
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SupportCase" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/support_cases/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a support case
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SupportCase" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/v1/admin/support_cases/{id}/assign:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Assign a support case to an agent
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assigned_to_user_id: { type: string, format: uuid }
+              required: [assigned_to_user_id]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SupportCase" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/support_cases/{id}/transition:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Transition a support case to a new status
+      description: The only way status ever changes — direct writes are rejected at the model level (Support::TransitionCase).
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [open, in_progress, waiting_customer, waiting_merchant, waiting_courier, resolved, closed]
+                resolution: { type: string }
+              required: [status]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/SupportCase" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/risk_decisions:
+    get:
+      summary: List risk decisions, optionally filtered by decision
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: decision
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/RiskDecision" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/risk_decisions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a risk decision
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RiskDecision" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/risk_decisions/{id}/review:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Mark an automated risk decision as reviewed by the current admin
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/RiskDecision" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/fraud_signals:
+    get:
+      summary: List fraud signals, optionally filtered by subject
+      description: >
+        Read-only — a signal is acted on by creating a RiskDecision
+        (POST .../risk_decisions), not by mutating the signal itself.
+        subject_type only takes effect together with subject_id.
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: subject_type
+          in: query
+          schema: { type: string }
+        - name: subject_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/FraudSignal" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/system_settings:
+    get:
+      summary: List system settings, optionally filtered by scope_type and/or key
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: scope_type
+          in: query
+          schema: { type: string }
+        - name: key
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/SystemSetting" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Set a system setting
+      description: Always inserts a new, incremented version — never updates a row in place (Configuration::SetSetting).
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope_type: { type: string }
+                scope_id: { type: string, format: uuid }
+                key: { type: string }
+                value: { description: Any JSON-serializable value; shape depends on value_type. }
+                value_type: { type: string, enum: [string, integer, boolean, json] }
+                expires_at: { type: string, format: date-time }
+              required: [scope_type, key, value, value_type]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SystemSetting" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/feature_flags:
+    get:
+      summary: List feature flags
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/FeatureFlag" } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      summary: Create a feature flag
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: { type: string }
+                description: { type: string }
+                enabled: { type: boolean }
+                rules: { type: object }
+              required: [key]
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FeatureFlag" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/UnprocessableContent" }
+
+  /api/v1/admin/feature_flags/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Show a feature flag
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FeatureFlag" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    patch:
+      summary: Update a feature flag
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: { type: string }
+                description: { type: string }
+                enabled: { type: boolean }
+                rules: { type: object }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/FeatureFlag" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/audit_events:
+    get:
+      summary: List audit events, optionally filtered by resource and/or action
+      description: >
+        Capped at 200 rows per request (truncated: true means more exist)
+        — there's no cursor/offset pagination yet, only these filters.
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: resource_type
+          in: query
+          schema: { type: string }
+        - name: resource_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: audit_action
+          in: query
+          description: >
+            Named audit_action, not action — action is Rails' own reserved
+            controller-action param name.
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items: { $ref: "#/components/schemas/AuditEvent" }
+                  truncated: { type: boolean }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/admin/reports/orders_by_day:
+    get:
+      summary: Daily order counts, revenue, and cancellation rate for a date range
+      description: Defaults to the last 7 days if period_start/period_end aren't given (section 14's basic operational reports).
+      tags: [admin]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: period_start
+          in: query
+          schema: { type: string, format: date }
+        - name: period_end
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    date: { type: string, format: date }
+                    orders: { type: integer }
+                    revenue_amount: { type: integer }
+                    cancelled_orders: { type: integer }
+                    cancellation_rate: { type: number, format: double, description: Percentage, e.g. 12.5 for 12.5%. }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/v1/webhooks/{provider}:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      summary: Receive a webhook event from an external provider
+      description: >
+        Unauthenticated by design — these come from external providers,
+        not our own app users; verified via the X-Webhook-Signature header
+        instead of a bearer token. Stored and processed idempotently by
+        (provider, provider_event_id). No real provider is wired up yet
+        (section 16) — this only receives, verifies, and stores.
+      tags: [webhooks]
+      parameters:
+        - name: X-Webhook-Signature
+          in: header
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Arbitrary provider payload; only "id"/"event_id" and "type" are read.
+      responses:
+        "200":
+          description: Received and enqueued for async processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean }
+                  id: { type: string, format: uuid }

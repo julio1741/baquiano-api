@@ -245,5 +245,57 @@ corrigió 2 bugs más invisibles para la suite automatizada (tasa de
 comisión del comercio sin forma de configurarse vía API, y una entrega que
 podía marcarse completada sin que el pago se hubiera capturado nunca).
 
-Los dominios de negocio restantes (Notifications, Support, Risk, Audit,
-Configuration) se agregan en los incrementos siguientes.
+**Incremento 7** (Notificaciones, soporte, riesgo, configuración y
+auditoría — cierre del MVP): `Notifications::Send` respeta
+`NotificationPreference` por canal (push/SMS/email) antes de crear nada, es
+idempotente por `(user, idempotency_key)`, y queda enganchado a los
+momentos clave del ciclo de vida del pedido (`Orders::TransitionOrder`
+notifica al cliente en aceptación/rechazo/listo/repartidor
+asignado/entregado/cancelado/reembolsado). `SupportCase` con el mismo
+patrón de estado protegido que `Order`/`Delivery`/`PaymentIntent`
+(`Support::TransitionCase` como único punto de cambio), pero
+deliberadamente simple — sección 4.16 es explícita en que no hay equipo
+dedicado de soporte para el lanzamiento, solo trazabilidad mínima.
+`FraudSignal` append-only con dos heurísticas realmente detectables:
+referencia de Pago Móvil duplicada (ya existía desde el Incremento 6, ahora
+además emite la señal) y una heurística nueva de velocidad imposible entre
+dos `LocationPing` consecutivos por tiempo del dispositivo (PostGIS
+`ST_Distance`, nunca aproximado en Ruby, maneja correctamente llegada de
+pings fuera de orden). `Risk::RecordSignal` abre automáticamente una
+`RiskDecision` en `manual_review` para toda señal `high`/`critical` — sin
+este enganche, `RiskDecision` no tenía ninguna otra vía de creación
+(`Risk::Decide` no tenía otro invocador y no existe endpoint admin para
+crearlas directamente), hallazgo del walkthrough E2E de este mismo
+incremento. `SystemSetting` versionado (nunca se sobrescribe, cada cambio
+es una fila nueva con `version` incremental) y `FeatureFlag` mínimo con
+reglas por organización. `Idempotency::Perform` genérico respaldado por
+`idempotency_records`, para nuevos puntos de entrada que no tienen ya una
+columna `idempotency_key` propia (no se retrofitteó sobre las existentes).
+Recepción de webhooks (`POST /api/v1/webhooks/:provider`) idempotente por
+`(provider, provider_event_id)` y procesamiento asíncrono con reintento —
+sin proveedor externo real todavía (sección 16), pero satisface el
+escenario obligatorio de webhook repetido. `AuditEvent` append-only
+enganchado a las acciones administrativas más sensibles (asignación de
+roles, decisión de reembolso, aprobación/pago de liquidación,
+aprobación/rechazo/suspensión de repartidor). `Events::ProcessOutboxJob`
+cierra el patrón outbox que quedaba solo de escritura desde el Incremento
+4 (publica — únicamente log, sin broker real); `PurgeOldLocationPingsJob`
+cierra la política de retención de ubicaciones que quedaba pendiente desde
+el Incremento 5. El walkthrough E2E de este incremento encontró y corrigió
+dos problemas invisibles para la suite automatizada: `config/sidekiq.yml`
+no existía, por lo que el proceso de Sidekiq real solo escuchaba la cola
+`default` y **ningún job en ninguna cola personalizada
+(`webhooks`/`notifications`/`maintenance`) se había ejecutado nunca** en el
+entorno corriendo (invisible a RSpec porque las specs llaman los jobs de
+forma síncrona); y el enganche de `RiskDecision` descrito arriba. Ver
+[`docs/architecture/decisions.md`](docs/architecture/decisions.md) para lo
+pendiente (9 de los 28 eventos de dominio de la sección 15 aún no se
+emiten, sin autoservicio de soporte para comercio, sin scheduler/cron para
+ejecutar los jobs de mantenimiento — se invocan manualmente o vía consola
+por ahora). 208 tests en total.
+
+Con el Incremento 7 se completa el MVP descrito en el prompt maestro
+(Incrementos 0-7). Las decisiones marcadas como pendientes de validación
+legal/bancaria/comercial/técnica en cada incremento siguen abiertas — ver
+[`docs/architecture/decisions.md`](docs/architecture/decisions.md) para el
+listado completo y consolidado.

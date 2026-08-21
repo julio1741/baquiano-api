@@ -31,6 +31,8 @@ module Api
           courier = ::Courier.find(params[:id])
           authorize courier
           courier.approve!
+          Audit::RecordEvent.call(action: "courier.approved", resource_type: "Courier", resource_id: courier.id,
+                                   request: request)
           render json: courier_body(courier)
         end
 
@@ -38,6 +40,8 @@ module Api
           courier = ::Courier.find(params[:id])
           authorize courier
           courier.reject!(reason: params[:reason])
+          Audit::RecordEvent.call(action: "courier.rejected", resource_type: "Courier", resource_id: courier.id,
+                                   metadata: { reason: params[:reason] }, request: request)
           render json: courier_body(courier)
         end
 
@@ -45,6 +49,8 @@ module Api
           courier = ::Courier.find(params[:id])
           authorize courier
           courier.suspend!(reason: params[:reason])
+          Audit::RecordEvent.call(action: "courier.suspended", resource_type: "Courier", resource_id: courier.id,
+                                   metadata: { reason: params[:reason] }, request: request)
           render json: courier_body(courier)
         end
 

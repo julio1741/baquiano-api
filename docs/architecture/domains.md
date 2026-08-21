@@ -58,6 +58,12 @@ throughout. Actually hit the "any `Api::V1::*` controller" case in
 Increment 6: `Api::V1::Admin::SettlementsController` (not itself under
 `Api::V1::Merchant` or `Api::V1::Courier`) needed `::Merchant`/`::Courier`
 in a `beneficiary_type` lookup hash — see docs/architecture/decisions.md.
+A variant of the same trap exists for `app/domains/webhooks/` (Increment
+7): `Api::V1::Webhooks::EventsController` referencing the domain service
+must spell it `::Webhooks::Receive`, or it resolves to the enclosing
+`Api::V1::Webhooks` routing module and raises "uninitialized constant"
+rather than a wrong-module `NoMethodError` (there's no
+`Api::V1::Webhooks::Receive` to accidentally match).
 
 Domains are added incrementally, one per implementation increment (section 14
 of the master prompt) — folders are only created once they hold real code, to
@@ -71,7 +77,7 @@ avoid empty scaffolding:
 | 4 | Orders, Events |
 | 5 | Couriers, Dispatch, Deliveries, Geography |
 | 6 | Payments, Ledger, Reconciliation, Settlements, Cash |
-| 7 | Notifications, Support, Risk, Audit, Configuration |
+| 7 | Notifications, Support, Risk, Audit, Configuration, Idempotency, Webhooks |
 
 `Events` (transactional outbox: `DomainEvent`/`OutboxEvent`,
 `Events::Publish`) was pulled forward into Increment 4 from section 4.18's

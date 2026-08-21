@@ -21,6 +21,11 @@ module Api
           refund = Refund.find(params[:id])
           authorize refund, :decide?
           Payments::DecideRefund.call(refund: refund, decided_by: current_user, approve: true)
+          Audit::RecordEvent.call(
+            action: "refund.approved", resource_type: "Refund", resource_id: refund.id,
+            organization: refund.order.organization, metadata: { amount: refund.amount, currency: refund.currency },
+            request: request
+          )
           render json: refund_body(refund.reload)
         end
 
@@ -29,6 +34,11 @@ module Api
           authorize refund, :decide?
           Payments::DecideRefund.call(
             refund: refund, decided_by: current_user, approve: false, failure_code: params[:failure_code]
+          )
+          Audit::RecordEvent.call(
+            action: "refund.rejected", resource_type: "Refund", resource_id: refund.id,
+            organization: refund.order.organization, metadata: { failure_code: params[:failure_code] },
+            request: request
           )
           render json: refund_body(refund.reload)
         end

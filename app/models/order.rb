@@ -19,6 +19,7 @@ class Order < ApplicationRecord
   has_one :delivery, dependent: :restrict_with_error
   has_one :payment_intent, dependent: :restrict_with_error
   has_many :refunds, dependent: :restrict_with_error
+  has_many :support_cases, dependent: :restrict_with_error
 
   enum :current_status, {
     payment_pending: "payment_pending",

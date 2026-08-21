@@ -45,6 +45,10 @@ Rails.application.routes.draw do
           resources :mobile_payment_submissions, only: [ :create ]
           resources :refunds, only: [ :create ]
         end
+        resources :support_cases, only: %i[index create]
+        resources :notifications, only: [ :index ]
+        resources :notification_preferences, only: [ :index ]
+        patch "notification_preferences/:notification_type", to: "notification_preferences#update"
       end
 
       namespace :courier do
@@ -83,6 +87,10 @@ Rails.application.routes.draw do
         resources :cash_balances, only: [ :index ]
         resources :cash_handovers, only: %i[index create]
         resources :settlements, only: [ :index ]
+        resources :support_cases, only: %i[index create]
+        resources :notifications, only: [ :index ]
+        resources :notification_preferences, only: [ :index ]
+        patch "notification_preferences/:notification_type", to: "notification_preferences#update"
       end
 
       namespace :merchant do
@@ -188,6 +196,25 @@ Rails.application.routes.draw do
           post :confirm, on: :member
         end
         resources :cash_balances, only: %i[index update]
+
+        resources :support_cases, only: %i[index show] do
+          member do
+            post :assign
+            post :transition
+          end
+        end
+        resources :risk_decisions, only: %i[index show] do
+          post :review, on: :member
+        end
+        resources :fraud_signals, only: [ :index ]
+        resources :system_settings, only: %i[index create]
+        resources :feature_flags, only: %i[index show create update]
+        resources :audit_events, only: [ :index ]
+        get "reports/orders_by_day", to: "reports#orders_by_day"
+      end
+
+      namespace :webhooks do
+        post ":provider", to: "events#create", as: :provider_events
       end
     end
   end

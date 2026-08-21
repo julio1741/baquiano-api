@@ -32,6 +32,12 @@ module Api
           settlement = Settlement.find(params[:id])
           authorize settlement, :approve?
           Settlements::Approve.call(settlement: settlement, approved_by: current_user)
+          Audit::RecordEvent.call(
+            action: "settlement.approved", resource_type: "Settlement", resource_id: settlement.id,
+            metadata: { beneficiary_type: settlement.beneficiary_type, beneficiary_id: settlement.beneficiary_id,
+                        net_amount: settlement.net_amount },
+            request: request
+          )
           render json: settlement_body(settlement.reload)
         end
 
@@ -39,6 +45,12 @@ module Api
           settlement = Settlement.find(params[:id])
           authorize settlement, :mark_paid?
           Settlements::MarkPaid.call(settlement: settlement, payment_reference: params[:payment_reference])
+          Audit::RecordEvent.call(
+            action: "settlement.paid", resource_type: "Settlement", resource_id: settlement.id,
+            metadata: { beneficiary_type: settlement.beneficiary_type, beneficiary_id: settlement.beneficiary_id,
+                        net_amount: settlement.net_amount },
+            request: request
+          )
           render json: settlement_body(settlement.reload)
         end
 

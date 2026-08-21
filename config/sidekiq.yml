@@ -1,0 +1,11 @@
+# Sidekiq only listens on the "default" queue unless told otherwise. Every
+# custom queue_as in the app (:webhooks, :notifications, :maintenance) was
+# silently never processed by `bundle exec sidekiq` without this file —
+# invisible to specs, which call jobs with perform_now/perform_enqueued_jobs
+# and never touch a real Sidekiq process. Found via live E2E in Increment 7.
+:concurrency: 5
+:queues:
+  - default
+  - webhooks
+  - notifications
+  - maintenance

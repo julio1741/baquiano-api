@@ -42,6 +42,14 @@ module Payments
 
       Payments::TransitionPaymentIntent.call(payment_intent: @payment_intent, to_status: "pending_review")
 
+      if duplicate
+        Risk::RecordSignal.call(
+          subject: @payment_intent.customer, signal_type: "duplicate_mobile_payment_reference", score: 80.0,
+          severity: "high", order: @payment_intent.order, payment_intent: @payment_intent,
+          evidence: { duplicate_of_submission_id: duplicate.id }
+        )
+      end
+
       submission
     end
   end

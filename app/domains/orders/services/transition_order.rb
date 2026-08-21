@@ -139,7 +139,31 @@ module Orders
           aggregate: @order, event_type: rule[:event_type],
           payload: { order_id: @order.id, from_status: from_status, to_status: @to_status }
         )
+        notify_customer!
       end
+    end
+
+    # A curated subset, not every transition — courier_search/picked_up/
+    # en_route are tracking-screen detail, not push-worthy on their own.
+    CUSTOMER_NOTIFICATION_TEMPLATES = {
+      "merchant_accepted" => "order_accepted",
+      "merchant_rejected" => "order_rejected",
+      "ready_for_pickup" => "order_ready_for_pickup",
+      "courier_assigned" => "courier_assigned",
+      "delivered" => "order_delivered",
+      "cancelled" => "order_cancelled",
+      "refunded" => "order_refunded",
+      "partially_refunded" => "order_partially_refunded"
+    }.freeze
+
+    def notify_customer!
+      template_code = CUSTOMER_NOTIFICATION_TEMPLATES[@to_status]
+      return unless template_code
+
+      Notifications::Send.call(
+        user: @order.customer.user, channel: "push", template_code: template_code, order: @order,
+        idempotency_key: "#{template_code}:#{@order.id}"
+      )
     end
 
     def authorize!(rule)

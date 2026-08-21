@@ -6,6 +6,7 @@ class Customer < ApplicationRecord
   has_many :quotes, dependent: :restrict_with_error
   has_many :orders, dependent: :restrict_with_error
   has_many :payment_intents, dependent: :restrict_with_error
+  has_many :support_cases, dependent: :restrict_with_error
 
   enum :status, { active: "active", suspended: "suspended" }, validate: true
 

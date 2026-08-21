@@ -19,6 +19,7 @@ class Delivery < ApplicationRecord
   has_many :dispatch_offers, dependent: :restrict_with_error
   has_many :location_pings, dependent: :nullify
   has_many :delivery_incidents, dependent: :restrict_with_error
+  has_many :support_cases, dependent: :restrict_with_error
 
   enum :status, {
     pending_assignment: "pending_assignment",

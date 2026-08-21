@@ -13,6 +13,11 @@ module Api
             organization_id: assignment.organization_id, branch_id: assignment.branch_id,
             starts_at: assignment.starts_at || Time.current, expires_at: assignment.expires_at
           )
+          Audit::RecordEvent.call(
+            action: "role_assignment.created", resource_type: "RoleAssignment", resource_id: created.id,
+            organization: created.organization_id && Organization.find_by(id: created.organization_id),
+            metadata: { user_id: created.user_id, role_id: created.role_id }, request: request
+          )
           render json: assignment_body(created), status: :created
         end
 
@@ -21,6 +26,11 @@ module Api
           authorize assignment
 
           AccessControl::RevokeRole.call(role_assignment: assignment, revoked_by: current_user, reason: params[:reason])
+          Audit::RecordEvent.call(
+            action: "role_assignment.revoked", resource_type: "RoleAssignment", resource_id: assignment.id,
+            metadata: { user_id: assignment.user_id, role_id: assignment.role_id, reason: params[:reason] },
+            request: request
+          )
           render json: assignment_body(assignment.reload)
         end
 

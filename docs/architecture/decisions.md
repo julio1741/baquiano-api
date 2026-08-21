@@ -373,3 +373,111 @@ it automatically) are placeholders — no product/risk decision has picked
 a real submission window, and there's no automated trigger (repeated cash
 shortfalls, fraud signals) that would ever flip `blocked_for_cash_orders`
 on its own. That's Risk domain territory (Increment 7).
+
+## Two real bugs found by a live end-to-end walkthrough (Increment 7)
+
+Same practice as Increments 4, 5, and 6 — a real HTTP walkthrough (bootstrap
+admin/customer/courier via `bin/rails runner`, build an order chain, then
+exercise every Increment 7 endpoint over `curl` against a running
+`docker compose` stack) found two defects invisible to the RSpec suite:
+
+1. **`config/sidekiq.yml` didn't exist, so the real Sidekiq process only
+   ever listened to the `default` queue.** Every `queue_as` in the app uses
+   `:maintenance`, `:notifications`, or `:webhooks` — none use `:default` —
+   so **no background job of any kind had ever actually run** in any
+   environment using this compose file, since the first custom queue was
+   introduced back in Increment 4. Completely invisible to specs, since
+   they call jobs synchronously (`perform_now`/`perform_enqueued_jobs`) and
+   never touch a real Sidekiq worker process. Caught only because the live
+   webhook-replay test kept showing `status: "received"` instead of
+   `"processed"` after `Webhooks::ProcessJob.perform_later` had clearly
+   enqueued something. Fixed by adding `config/sidekiq.yml` listing all
+   four queues (`default`, `webhooks`, `notifications`, `maintenance`);
+   Sidekiq loads that file automatically with no command-line changes
+   needed. Worth auditing again if a queue is ever renamed or added.
+2. **`RiskDecision` had no path to ever be created.** `Risk::Decide` existed
+   with no caller anywhere in the app, and the admin routes only expose
+   `index`/`show`/`review` for `risk_decisions` — no `create`. A fraud
+   signal could fire correctly (confirmed live: an impossible-speed pair of
+   `LocationPing`s produced a `FraudSignal` with `implied_speed_kmh` over
+   150,000), but `GET /api/v1/admin/risk_decisions` stayed empty forever,
+   so nothing ever surfaced for `Admin::RiskDecisionsController#review` to
+   act on. Fixed by having `Risk::RecordSignal` call `Risk::Decide` to open
+   a `manual_review` decision automatically whenever a signal's severity is
+   `high` or `critical` (`medium`/`low` signals are recorded but don't open
+   a decision — kept deliberately conservative per section 16's ban on an
+   automated ML risk engine; this only routes existing evidence to a human,
+   it doesn't decide anything on its own).
+
+## Nine of the section-15 domain events are still never emitted
+
+`DomainEvent`/`OutboxEvent` (Increment 4) plus `Events::ProcessOutboxJob`
+(Increment 7, which finally drains the outbox instead of leaving it
+write-only) cover most of the order/delivery/payment/refund lifecycle, but
+`UserRegistered`, `PhoneVerified`, `MerchantApproved`, `BranchPaused`,
+`CatalogPublished`, `QuoteCreated`, `CashCollected`, `CashHandedOver`,
+`SettlementCreated`, and `SettlementPaid` are named in the spec's event
+catalog but never actually published anywhere in the codebase. None of
+these gaps block anything internal to the MVP (nothing here subscribes to
+its own domain events yet — the outbox is a boundary for future external
+consumers, not something the app itself currently reacts to), so this was
+deliberately left as a documented gap rather than retrofitted across five
+increments' worth of services.
+
+## No merchant-facing support case self-service, and no scheduler for maintenance jobs
+
+`SupportCase` self-service exists for customer and courier
+(`Api::V1::Customer::SupportCasesController`,
+`Api::V1::Courier::SupportCasesController`) but not for merchant staff —
+section 4.16 only asked for "trazabilidad mínima," not full coverage
+across every actor, and a merchant-side controller would be near-identical
+copy-paste of the existing two. Separately, the now-nine `queue_as
+:maintenance` jobs (outbox processing, webhook retry, session cleanup,
+location-ping purge, cart/quote expiry, offer expiry, OTP-challenge purge,
+order auto-cancel, payment-intent expiry, duplicate-payment detection) all
+still have to be triggered manually or via `bin/rails runner` — there is no
+cron gem or scheduler wired into this MVP (accepted and documented as a
+gap since Increment 4; the list of jobs needing a schedule has just grown).
+
+## `Idempotency::Perform`'s block-forwarding needed an explicit method, not `...`
+
+The usual `def self.call(...) = new(...).call` shorthand used everywhere
+else in this codebase silently breaks when the underlying `#call` expects
+a block: Ruby's `...` forwards positional/keyword args *and* the block to
+whichever call it's attached to — here, `new(...)` — so the following
+`.call` has no block to `yield` into, and raises `LocalJumpError` at the
+`yield` site inside `#call`, not at the call site. Caught by a smoke test
+that called `Idempotency::Perform.call(...) { create_something }` in the
+ordinary block-based way every other case in the codebase does. Fixed with
+an explicit `def self.call(*args, **kwargs, &block); new(*args, **kwargs).call(&block); end`.
+Worth remembering for any future service that both uses the `.call(...)`
+shorthand *and* wants to accept a block — the shorthand and blocks don't
+mix.
+
+## `Api::V1::Webhooks` is a fourth confirmed instance of the namespace collision
+
+`app/controllers/api/v1/webhooks/events_controller.rb` sits in
+`Api::V1::Webhooks`, colliding with the top-level `Webhooks` domain module
+the same way `Merchant`/`Customer`/`Courier` collide with their own
+domains (documented in `docs/architecture/domains.md`'s "gotcha" section
+and the Increment 6 entry above for `Api::V1::Admin`). This instance was
+caught proactively while writing the controller, before it ever shipped
+broken — a bare `Webhooks::Receive.call` inside this controller would have
+raised "uninitialized constant" rather than a wrong-module `NoMethodError`,
+since there's no `Api::V1::Webhooks::Receive` to accidentally resolve to
+instead. Written correctly from the start as `::Webhooks::Receive`/
+`::Webhooks::ProcessJob`. Four confirmed instances of this trap across
+Increments 5-7 is enough to call it a systemic risk of the
+`Api::V1::<RoleName>` routing convention, not a one-off mistake — any new
+`Api::V1::<X>` namespace should be checked against existing top-level
+domain module names before writing any bare constant reference inside it.
+
+## `audit_events.change_details` deviates from a literal `changes` column name
+
+`AuditEvent` stores a diff of what changed under `change_details`, not
+`changes` — the spec's own field list literally says "changes," but
+`changes` is `ActiveRecord::Base`'s own reserved dirty-tracking method
+name, and defining a column with that name raises
+`ActiveRecord::DangerousAttributeError` at boot. Caught before the model
+was even written, via a disposable scratch-class test. Documented directly
+in the migration file's own comment as well as here.

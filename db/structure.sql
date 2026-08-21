@@ -69,6 +69,30 @@ CREATE TABLE public.ar_internal_metadata (
 
 
 --
+-- Name: audit_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audit_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    actor_user_id uuid,
+    actor_type character varying NOT NULL,
+    action character varying NOT NULL,
+    resource_type character varying NOT NULL,
+    resource_id uuid,
+    organization_id uuid,
+    branch_id uuid,
+    request_id character varying,
+    correlation_id character varying,
+    ip_address inet,
+    user_agent character varying,
+    change_details jsonb DEFAULT '{}'::jsonb NOT NULL,
+    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    occurred_at timestamp with time zone NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: branches; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -533,6 +557,63 @@ CREATE TABLE public.exchange_rates (
 
 
 --
+-- Name: feature_flags; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.feature_flags (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    key character varying NOT NULL,
+    description character varying,
+    enabled boolean DEFAULT false NOT NULL,
+    rules jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_by_user_id uuid NOT NULL,
+    updated_by_user_id uuid NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: fraud_signals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fraud_signals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    subject_type character varying NOT NULL,
+    subject_id uuid NOT NULL,
+    order_id uuid,
+    payment_intent_id uuid,
+    signal_type character varying NOT NULL,
+    score numeric(5,2) NOT NULL,
+    severity character varying NOT NULL,
+    evidence jsonb DEFAULT '{}'::jsonb NOT NULL,
+    detected_at timestamp with time zone NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: idempotency_records; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.idempotency_records (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    key character varying NOT NULL,
+    actor_type character varying NOT NULL,
+    actor_id uuid NOT NULL,
+    operation character varying NOT NULL,
+    request_digest character varying NOT NULL,
+    response_status integer,
+    response_body_encrypted text,
+    resource_type character varying,
+    resource_id uuid,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: inventory_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -718,6 +799,49 @@ CREATE TABLE public.modifiers (
     created_at timestamp(6) with time zone NOT NULL,
     updated_at timestamp(6) with time zone NOT NULL,
     CONSTRAINT modifiers_additional_price_amount_non_negative CHECK ((additional_price_amount >= 0))
+);
+
+
+--
+-- Name: notification_preferences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_preferences (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    notification_type character varying NOT NULL,
+    push_enabled boolean DEFAULT true NOT NULL,
+    sms_enabled boolean DEFAULT true NOT NULL,
+    email_enabled boolean DEFAULT true NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notifications (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    order_id uuid,
+    channel character varying NOT NULL,
+    template_code character varying NOT NULL,
+    status character varying DEFAULT 'pending'::character varying NOT NULL,
+    destination_digest character varying,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    provider character varying DEFAULT 'log'::character varying NOT NULL,
+    provider_message_id character varying,
+    scheduled_at timestamp with time zone NOT NULL,
+    sent_at timestamp with time zone,
+    delivered_at timestamp with time zone,
+    failed_at timestamp with time zone,
+    failure_code character varying,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    idempotency_key character varying NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
 );
 
 
@@ -1168,6 +1292,26 @@ CREATE TABLE public.refunds (
 
 
 --
+-- Name: risk_decisions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.risk_decisions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    subject_type character varying NOT NULL,
+    subject_id uuid NOT NULL,
+    order_id uuid,
+    decision character varying NOT NULL,
+    risk_score numeric(5,2) NOT NULL,
+    reasons jsonb DEFAULT '{}'::jsonb NOT NULL,
+    rules_version character varying NOT NULL,
+    reviewed_by_user_id uuid,
+    reviewed_at timestamp with time zone,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: role_assignments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1309,6 +1453,54 @@ CREATE TABLE public.special_business_hours (
 
 
 --
+-- Name: support_cases; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.support_cases (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    public_number character varying NOT NULL,
+    customer_id uuid,
+    order_id uuid,
+    delivery_id uuid,
+    opened_by_user_id uuid NOT NULL,
+    assigned_to_user_id uuid,
+    category character varying NOT NULL,
+    priority character varying DEFAULT 'medium'::character varying NOT NULL,
+    status character varying DEFAULT 'open'::character varying NOT NULL,
+    subject character varying NOT NULL,
+    description text NOT NULL,
+    resolution text,
+    opened_at timestamp with time zone NOT NULL,
+    resolved_at timestamp with time zone,
+    closed_at timestamp with time zone,
+    lock_version integer DEFAULT 0 NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
+-- Name: system_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.system_settings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    scope_type character varying NOT NULL,
+    scope_id uuid,
+    key character varying NOT NULL,
+    value jsonb NOT NULL,
+    value_type character varying NOT NULL,
+    encrypted boolean DEFAULT false NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    effective_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone,
+    updated_by_user_id uuid NOT NULL,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: tax_rules; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1393,6 +1585,27 @@ CREATE TABLE public.vehicles (
 
 
 --
+-- Name: webhook_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webhook_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    provider character varying NOT NULL,
+    provider_event_id character varying NOT NULL,
+    event_type character varying,
+    signature_valid boolean NOT NULL,
+    payload_encrypted text NOT NULL,
+    status character varying DEFAULT 'received'::character varying NOT NULL,
+    received_at timestamp with time zone NOT NULL,
+    processed_at timestamp with time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    last_error character varying,
+    created_at timestamp(6) with time zone NOT NULL,
+    updated_at timestamp(6) with time zone NOT NULL
+);
+
+
+--
 -- Name: zones; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1423,6 +1636,14 @@ ALTER TABLE ONLY public.addresses
 
 ALTER TABLE ONLY public.ar_internal_metadata
     ADD CONSTRAINT ar_internal_metadata_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: audit_events audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -1602,6 +1823,30 @@ ALTER TABLE ONLY public.exchange_rates
 
 
 --
+-- Name: feature_flags feature_flags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feature_flags
+    ADD CONSTRAINT feature_flags_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fraud_signals fraud_signals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fraud_signals
+    ADD CONSTRAINT fraud_signals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: idempotency_records idempotency_records_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.idempotency_records
+    ADD CONSTRAINT idempotency_records_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: inventory_items inventory_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1671,6 +1916,22 @@ ALTER TABLE ONLY public.modifier_groups
 
 ALTER TABLE ONLY public.modifiers
     ADD CONSTRAINT modifiers_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notification_preferences notification_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_preferences
+    ADD CONSTRAINT notification_preferences_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
 
 
 --
@@ -1818,6 +2079,14 @@ ALTER TABLE ONLY public.refunds
 
 
 --
+-- Name: risk_decisions risk_decisions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.risk_decisions
+    ADD CONSTRAINT risk_decisions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: role_assignments role_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1882,6 +2151,22 @@ ALTER TABLE ONLY public.special_business_hours
 
 
 --
+-- Name: support_cases support_cases_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT support_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: system_settings system_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.system_settings
+    ADD CONSTRAINT system_settings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: tax_rules tax_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1911,6 +2196,14 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.vehicles
     ADD CONSTRAINT vehicles_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: webhook_events webhook_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_events
+    ADD CONSTRAINT webhook_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -1950,6 +2243,13 @@ CREATE INDEX idx_on_terminal_owner_type_terminal_owner_id_62ec5701bd ON public.p
 
 
 --
+-- Name: idx_on_user_id_notification_type_2ab4363e9b; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_on_user_id_notification_type_2ab4363e9b ON public.notification_preferences USING btree (user_id, notification_type);
+
+
+--
 -- Name: index_addresses_on_city_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1975,6 +2275,41 @@ CREATE INDEX index_addresses_on_location ON public.addresses USING gist (locatio
 --
 
 CREATE UNIQUE INDEX index_addresses_one_default_per_customer ON public.addresses USING btree (customer_id) WHERE is_default;
+
+
+--
+-- Name: index_audit_events_on_action; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audit_events_on_action ON public.audit_events USING btree (action);
+
+
+--
+-- Name: index_audit_events_on_actor_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audit_events_on_actor_user_id ON public.audit_events USING btree (actor_user_id);
+
+
+--
+-- Name: index_audit_events_on_branch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audit_events_on_branch_id ON public.audit_events USING btree (branch_id);
+
+
+--
+-- Name: index_audit_events_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audit_events_on_organization_id ON public.audit_events USING btree (organization_id);
+
+
+--
+-- Name: index_audit_events_on_resource_type_and_resource_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_audit_events_on_resource_type_and_resource_id ON public.audit_events USING btree (resource_type, resource_id);
 
 
 --
@@ -2433,6 +2768,62 @@ CREATE UNIQUE INDEX index_exchange_rates_uniqueness ON public.exchange_rates USI
 
 
 --
+-- Name: index_feature_flags_on_created_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_feature_flags_on_created_by_user_id ON public.feature_flags USING btree (created_by_user_id);
+
+
+--
+-- Name: index_feature_flags_on_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_feature_flags_on_key ON public.feature_flags USING btree (key);
+
+
+--
+-- Name: index_feature_flags_on_updated_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_feature_flags_on_updated_by_user_id ON public.feature_flags USING btree (updated_by_user_id);
+
+
+--
+-- Name: index_fraud_signals_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_fraud_signals_on_order_id ON public.fraud_signals USING btree (order_id);
+
+
+--
+-- Name: index_fraud_signals_on_payment_intent_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_fraud_signals_on_payment_intent_id ON public.fraud_signals USING btree (payment_intent_id);
+
+
+--
+-- Name: index_fraud_signals_on_signal_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_fraud_signals_on_signal_type ON public.fraud_signals USING btree (signal_type);
+
+
+--
+-- Name: index_fraud_signals_on_subject_type_and_subject_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_fraud_signals_on_subject_type_and_subject_id ON public.fraud_signals USING btree (subject_type, subject_id);
+
+
+--
+-- Name: index_idempotency_records_on_actor_and_operation_and_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_idempotency_records_on_actor_and_operation_and_key ON public.idempotency_records USING btree (actor_type, actor_id, operation, key);
+
+
+--
 -- Name: index_inventory_items_on_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2640,6 +3031,41 @@ CREATE INDEX index_modifier_groups_on_product_id ON public.modifier_groups USING
 --
 
 CREATE INDEX index_modifiers_on_modifier_group_id ON public.modifiers USING btree (modifier_group_id);
+
+
+--
+-- Name: index_notification_preferences_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notification_preferences_on_user_id ON public.notification_preferences USING btree (user_id);
+
+
+--
+-- Name: index_notifications_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notifications_on_order_id ON public.notifications USING btree (order_id);
+
+
+--
+-- Name: index_notifications_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notifications_on_status ON public.notifications USING btree (status);
+
+
+--
+-- Name: index_notifications_on_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_notifications_on_user_id ON public.notifications USING btree (user_id);
+
+
+--
+-- Name: index_notifications_on_user_id_and_idempotency_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_notifications_on_user_id_and_idempotency_key ON public.notifications USING btree (user_id, idempotency_key);
 
 
 --
@@ -3063,6 +3489,34 @@ CREATE INDEX index_refunds_on_status ON public.refunds USING btree (status);
 
 
 --
+-- Name: index_risk_decisions_on_decision; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_risk_decisions_on_decision ON public.risk_decisions USING btree (decision);
+
+
+--
+-- Name: index_risk_decisions_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_risk_decisions_on_order_id ON public.risk_decisions USING btree (order_id);
+
+
+--
+-- Name: index_risk_decisions_on_reviewed_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_risk_decisions_on_reviewed_by_user_id ON public.risk_decisions USING btree (reviewed_by_user_id);
+
+
+--
+-- Name: index_risk_decisions_on_subject_type_and_subject_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_risk_decisions_on_subject_type_and_subject_id ON public.risk_decisions USING btree (subject_type, subject_id);
+
+
+--
 -- Name: index_role_assignments_on_active_scope; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3238,6 +3692,69 @@ CREATE UNIQUE INDEX index_special_business_hours_on_branch_id_and_date ON public
 
 
 --
+-- Name: index_support_cases_on_assigned_to_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_assigned_to_user_id ON public.support_cases USING btree (assigned_to_user_id);
+
+
+--
+-- Name: index_support_cases_on_customer_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_customer_id ON public.support_cases USING btree (customer_id);
+
+
+--
+-- Name: index_support_cases_on_delivery_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_delivery_id ON public.support_cases USING btree (delivery_id);
+
+
+--
+-- Name: index_support_cases_on_opened_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_opened_by_user_id ON public.support_cases USING btree (opened_by_user_id);
+
+
+--
+-- Name: index_support_cases_on_order_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_order_id ON public.support_cases USING btree (order_id);
+
+
+--
+-- Name: index_support_cases_on_public_number; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_support_cases_on_public_number ON public.support_cases USING btree (public_number);
+
+
+--
+-- Name: index_support_cases_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_support_cases_on_status ON public.support_cases USING btree (status);
+
+
+--
+-- Name: index_system_settings_on_scope_and_key_and_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_system_settings_on_scope_and_key_and_version ON public.system_settings USING btree (scope_type, scope_id, key, version);
+
+
+--
+-- Name: index_system_settings_on_updated_by_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_system_settings_on_updated_by_user_id ON public.system_settings USING btree (updated_by_user_id);
+
+
+--
 -- Name: index_tax_rules_on_organization_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3294,6 +3811,20 @@ CREATE INDEX index_vehicles_on_plate_digest ON public.vehicles USING btree (plat
 
 
 --
+-- Name: index_webhook_events_on_provider_and_provider_event_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_webhook_events_on_provider_and_provider_event_id ON public.webhook_events USING btree (provider, provider_event_id);
+
+
+--
+-- Name: index_webhook_events_on_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_webhook_events_on_status ON public.webhook_events USING btree (status);
+
+
+--
 -- Name: index_zones_on_city_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3328,6 +3859,14 @@ ALTER TABLE ONLY public.role_assignments
 
 ALTER TABLE ONLY public.ledger_accounts
     ADD CONSTRAINT fk_rails_022c225858 FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
+-- Name: audit_events fk_rails_0242d0f1e0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT fk_rails_0242d0f1e0 FOREIGN KEY (branch_id) REFERENCES public.branches(id);
 
 
 --
@@ -3451,6 +3990,14 @@ ALTER TABLE ONLY public.mobile_payment_submissions
 
 
 --
+-- Name: fraud_signals fk_rails_21fc49b1b9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fraud_signals
+    ADD CONSTRAINT fk_rails_21fc49b1b9 FOREIGN KEY (payment_intent_id) REFERENCES public.payment_intents(id);
+
+
+--
 -- Name: catalogs fk_rails_2236035560; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3496,6 +4043,14 @@ ALTER TABLE ONLY public.order_items
 
 ALTER TABLE ONLY public.order_status_histories
     ADD CONSTRAINT fk_rails_2b161b5f6d FOREIGN KEY (order_id) REFERENCES public.orders(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: audit_events fk_rails_2e3720791c; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT fk_rails_2e3720791c FOREIGN KEY (actor_user_id) REFERENCES public.users(id);
 
 
 --
@@ -3555,6 +4110,14 @@ ALTER TABLE ONLY public.business_hours
 
 
 --
+-- Name: system_settings fk_rails_3d4f8959e7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.system_settings
+    ADD CONSTRAINT fk_rails_3d4f8959e7 FOREIGN KEY (updated_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: cart_item_modifiers fk_rails_3daba72fa7; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3579,6 +4142,14 @@ ALTER TABLE ONLY public.deliveries
 
 
 --
+-- Name: risk_decisions fk_rails_40e4f43cbe; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.risk_decisions
+    ADD CONSTRAINT fk_rails_40e4f43cbe FOREIGN KEY (reviewed_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: devices fk_rails_410b63ef65; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3600,6 +4171,14 @@ ALTER TABLE ONLY public.orders
 
 ALTER TABLE ONLY public.dispatch_offers
     ADD CONSTRAINT fk_rails_41f38f6d1a FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id);
+
+
+--
+-- Name: feature_flags fk_rails_42c3909528; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feature_flags
+    ADD CONSTRAINT fk_rails_42c3909528 FOREIGN KEY (updated_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -3667,6 +4246,14 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: support_cases fk_rails_4cb1a4451b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_4cb1a4451b FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+
+--
 -- Name: ledger_transactions fk_rails_4d3874d077; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3696,6 +4283,14 @@ ALTER TABLE ONLY public.delivery_incidents
 
 ALTER TABLE ONLY public.cart_item_modifiers
     ADD CONSTRAINT fk_rails_506772ae83 FOREIGN KEY (cart_item_id) REFERENCES public.cart_items(id) ON DELETE CASCADE;
+
+
+--
+-- Name: fraud_signals fk_rails_5235cc345a; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fraud_signals
+    ADD CONSTRAINT fk_rails_5235cc345a FOREIGN KEY (order_id) REFERENCES public.orders(id);
 
 
 --
@@ -3835,6 +4430,14 @@ ALTER TABLE ONLY public.order_item_modifiers
 
 
 --
+-- Name: feature_flags fk_rails_84522ac1a2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.feature_flags
+    ADD CONSTRAINT fk_rails_84522ac1a2 FOREIGN KEY (created_by_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: customers fk_rails_8b503d0545; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3856,6 +4459,14 @@ ALTER TABLE ONLY public.role_assignments
 
 ALTER TABLE ONLY public.quotes
     ADD CONSTRAINT fk_rails_8ecd5fdf28 FOREIGN KEY (cart_id) REFERENCES public.carts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: support_cases fk_rails_8f2165c87d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_8f2165c87d FOREIGN KEY (customer_id) REFERENCES public.customers(id);
 
 
 --
@@ -3907,6 +4518,14 @@ ALTER TABLE ONLY public.reconciliation_batches
 
 
 --
+-- Name: notification_preferences fk_rails_9503aade25; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_preferences
+    ADD CONSTRAINT fk_rails_9503aade25 FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: payment_intents fk_rails_98ae66af3b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3920,6 +4539,14 @@ ALTER TABLE ONLY public.payment_intents
 
 ALTER TABLE ONLY public.customers
     ADD CONSTRAINT fk_rails_9917eeaf5d FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: risk_decisions fk_rails_9d20a1b0d7; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.risk_decisions
+    ADD CONSTRAINT fk_rails_9d20a1b0d7 FOREIGN KEY (order_id) REFERENCES public.orders(id);
 
 
 --
@@ -3987,6 +4614,22 @@ ALTER TABLE ONLY public.courier_availabilities
 
 
 --
+-- Name: notifications fk_rails_b080fb4855; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT fk_rails_b080fb4855 FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: support_cases fk_rails_b2932e0c43; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_b2932e0c43 FOREIGN KEY (assigned_to_user_id) REFERENCES public.users(id);
+
+
+--
 -- Name: service_areas fk_rails_b351f1b628; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4035,6 +4678,14 @@ ALTER TABLE ONLY public.refunds
 
 
 --
+-- Name: audit_events fk_rails_be0ed9e37f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_events
+    ADD CONSTRAINT fk_rails_be0ed9e37f FOREIGN KEY (organization_id) REFERENCES public.organizations(id);
+
+
+--
 -- Name: order_item_modifiers fk_rails_c123920f0e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4056,6 +4707,22 @@ ALTER TABLE ONLY public.zones
 
 ALTER TABLE ONLY public.mobile_payment_submissions
     ADD CONSTRAINT fk_rails_c3facd7653 FOREIGN KEY (duplicate_of_submission_id) REFERENCES public.mobile_payment_submissions(id);
+
+
+--
+-- Name: support_cases fk_rails_c8ac92f1e0; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_c8ac92f1e0 FOREIGN KEY (delivery_id) REFERENCES public.deliveries(id);
+
+
+--
+-- Name: support_cases fk_rails_c9634a828b; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.support_cases
+    ADD CONSTRAINT fk_rails_c9634a828b FOREIGN KEY (opened_by_user_id) REFERENCES public.users(id);
 
 
 --
@@ -4251,6 +4918,14 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: notifications fk_rails_fd5a31cf2f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT fk_rails_fd5a31cf2f FOREIGN KEY (order_id) REFERENCES public.orders(id);
+
+
+--
 -- Name: orders fk_rails_fe8af6535c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4273,6 +4948,16 @@ ALTER TABLE ONLY public.cart_items
 SET search_path TO "$user", public;
 
 INSERT INTO "schema_migrations" (version) VALUES
+('20260821013941'),
+('20260821013552'),
+('20260821013134'),
+('20260821013133'),
+('20260821013132'),
+('20260821012642'),
+('20260821012641'),
+('20260821012357'),
+('20260821011856'),
+('20260821011855'),
 ('20260820131336'),
 ('20260820131335'),
 ('20260820131334'),
